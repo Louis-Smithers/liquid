@@ -35,7 +35,7 @@ Thumbs.db
 .claude/
 .codegraph/
 .gemini/
-.agent/
+.agents/
 
 # ── Invoice PDFs (real client documents — never commit) ───────────────────
 invoices/
