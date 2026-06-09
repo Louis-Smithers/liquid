@@ -1,6 +1,5 @@
 [build]
-builder = "nixpacks"
 buildCommand = "npm ci && npm run build"
 
 [deploy]
-staticDir = "dist"
+startCommand = "npx serve -s dist -l $PORT"
