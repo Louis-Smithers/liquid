@@ -1,5 +1,2 @@
 [build]
-buildCommand = "dotnet publish Smithers.API.csproj -c Release -o out"
-
-[deploy]
-startCommand = "cd out && dotnet Smithers.API.dll"
+builder = "dockerfile"
