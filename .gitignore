@@ -41,7 +41,7 @@ Thumbs.db
 invoices/
 RetoolUI/
 mcp.json
-
+test
 # ── SQL setup scripts (reference project URLs / seed credentials) ─────────
 backend/sql/create-users.sh
 backend/sql/legacy-supabase-schema.backup.sql
