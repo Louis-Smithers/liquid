@@ -1,2 +1,5 @@
+[build]
+buildCommand = "dotnet publish Smithers.API.csproj -c Release -o out"
+
 [deploy]
-startCommand = "dotnet Smithers.API.dll"
+startCommand = "cd out && dotnet Smithers.API.dll"
