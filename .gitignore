@@ -35,13 +35,16 @@ Thumbs.db
 .claude/
 .codegraph/
 .gemini/
-.agents/skills
+.agent/
+.agents/
 
 # ── Invoice PDFs (real client documents — never commit) ───────────────────
 invoices/
 RetoolUI/
 mcp.json
-test
+
+# ── Tests ─────────────────────────────────────────────────────────────────
+tests/
 # ── SQL setup scripts (reference project URLs / seed credentials) ─────────
 backend/sql/create-users.sh
 backend/sql/legacy-supabase-schema.backup.sql
