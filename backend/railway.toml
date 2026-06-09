@@ -1,0 +1,2 @@
+[deploy]
+startCommand = "dotnet Smithers.API.dll"
