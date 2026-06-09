@@ -1,0 +1,48 @@
+# Smithers — Root .gitignore
+
+# ── Environment files (NEVER commit secrets) ──────────────────────────────
+**/.env
+**/.env.local
+**/.env.*.local
+!**/.env.example
+
+# ── ASP.NET Core user secrets ─────────────────────────────────────────────
+**/appsettings.Development.json
+
+# ── Build outputs ─────────────────────────────────────────────────────────
+**/bin/
+**/obj/
+**/dist/
+**/.next/
+
+# ── Node ──────────────────────────────────────────────────────────────────
+**/node_modules/
+**/.pnp
+**/.pnp.js
+
+# ── IDE ───────────────────────────────────────────────────────────────────
+.vs/
+.vscode/settings.json
+*.user
+*.suo
+.idea/
+
+# ── OS ────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Agent / AI tooling (never commit — may contain plan docs or credential notes) ──
+.claude/
+.codegraph/
+.gemini/
+.agent/
+
+# ── Invoice PDFs (real client documents — never commit) ───────────────────
+invoices/
+RetoolUI/
+mcp.json
+
+# ── SQL setup scripts (reference project URLs / seed credentials) ─────────
+backend/sql/create-users.sh
+backend/sql/legacy-supabase-schema.backup.sql
+backend/sql/CONNECT-DB.md
