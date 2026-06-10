@@ -96,6 +96,27 @@ public class ClientService : IClientService
         return true;
     }
 
+    public async Task<IEnumerable<ClientStatDto>> GetAllStatsAsync()
+    {
+        var includedStatuses = new[] { "Pre-Verified", "Unverified", "OA", "ON" };
+
+        var groups = await _context.Invoices
+            .Where(p => includedStatuses.Contains(p.Status) && !p.Archived)
+            .GroupBy(p => p.LiquidClient)
+            .Select(g => new
+            {
+                Shortcode = g.Key,
+                Total = g.Count(),
+                Verified = g.Count(p => p.Verified)
+            })
+            .ToListAsync();
+
+        return groups.Select(g => new ClientStatDto(
+            g.Shortcode,
+            g.Total > 0 ? (decimal)g.Verified / g.Total : 0m
+        ));
+    }
+
     public async Task<ClientSummaryDto?> GetSummaryAsync(string shortcode)
     {
         var client = await _context.Clients.FirstOrDefaultAsync(c => c.Shortcode == shortcode);

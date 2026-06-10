@@ -8,6 +8,7 @@ export interface NotificationSheetItemDto {
   includedAmount: number
   overrideInitialFee?: number
   overrideReserveFee?: number
+  hasDocument: boolean
 }
 
 export interface NotificationSheetDto {
@@ -30,5 +31,8 @@ export interface NotificationSheetDto {
   otherAdjustments: number
   advanceAmount: number
   notes?: string
+  intakeDocumentPath?: string
+  intakeGeneratedAt?: string
+  hasIntake: boolean
   items: NotificationSheetItemDto[]
 }

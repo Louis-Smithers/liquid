@@ -9,4 +9,5 @@ public interface IClientService
     Task<ClientDto> CreateAsync(CreateClientDto dto);
     Task<bool> UpdateAsync(string shortcode, UpdateClientDto dto);
     Task<ClientSummaryDto?> GetSummaryAsync(string shortcode);
+    Task<IEnumerable<ClientStatDto>> GetAllStatsAsync();
 }

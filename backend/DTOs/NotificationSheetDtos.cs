@@ -26,6 +26,10 @@ public class NotificationSheetDto
     public decimal AdvanceAmount { get; set; }
     public string? Notes { get; set; }
 
+    public string? IntakeDocumentPath { get; set; }
+    public DateTimeOffset? IntakeGeneratedAt { get; set; }
+    public bool HasIntake => IntakeDocumentPath != null;
+
     public List<NotificationSheetItemDto> Items { get; set; } = new();
 }
 
@@ -40,6 +44,7 @@ public class NotificationSheetItemDto
     public decimal IncludedAmount { get; set; }
     public decimal? OverrideInitialFee { get; set; }
     public decimal? OverrideReserveFee { get; set; }
+    public bool HasDocument { get; set; }
 }
 
 public class CreateNotificationSheetDto
@@ -71,4 +76,12 @@ public class UpdateNotificationSheetDto
     public decimal? ReservesToHoldBack { get; set; }
     public decimal? OtherAdjustments { get; set; }
     public decimal? AdvanceAmount { get; set; }
+}
+
+public class SubmitNsResultDto
+{
+    public bool IntakeGenerated { get; set; }
+    public int MergedInvoiceCount { get; set; }
+    public List<string> MissingDocumentInvoiceNumbers { get; set; } = new();
+    public string? Message { get; set; }
 }

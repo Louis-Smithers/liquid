@@ -25,6 +25,10 @@ public class ClientsController : ControllerBase
         return client is null ? NotFound() : Ok(client);
     }
 
+    [HttpGet("stats")]
+    public async Task<ActionResult<IEnumerable<ClientStatDto>>> GetStats()
+        => Ok(await _service.GetAllStatsAsync());
+
     [HttpGet("{shortcode}/summary")]
     public async Task<ActionResult<ClientSummaryDto>> GetClientSummary(string shortcode)
     {

@@ -108,7 +108,7 @@ public class NotificationSheetsController : ControllerBase
     }
 
     [HttpPost("{id:guid}/submit")]
-    public async Task<ActionResult> Submit(Guid id)
+    public async Task<ActionResult<SubmitNsResultDto>> Submit(Guid id, [FromServices] INsIntakeService intakeService)
     {
         var sheet = await _service.GetByIdAsync(id);
         if (sheet == null) return NotFound();
@@ -117,7 +117,22 @@ public class NotificationSheetsController : ControllerBase
 
         var dto = new UpdateNotificationSheetDto { Status = "Submitted" };
         var updated = await _service.UpdateAsync(id, dto, GetUserId());
-        return updated ? NoContent() : NotFound();
+        
+        if (!updated) return NotFound();
+
+        try
+        {
+            var result = await intakeService.GenerateAndStoreAsync(id);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            return Ok(new SubmitNsResultDto
+            {
+                IntakeGenerated = false,
+                Message = $"Intake generation failed: {ex.Message}"
+            });
+        }
     }
 
     [HttpGet("{id:guid}/pdf")]
@@ -129,5 +144,27 @@ public class NotificationSheetsController : ControllerBase
 
         var pdfBytes = pdfService.GenerateScheduleOfAccounts(sheet);
         return File(pdfBytes, "application/pdf", $"ScheduleOfAccounts_{sheet.ClientShortcode}_{id}.pdf");
+    }
+
+    [HttpGet("{id:guid}/intake")]
+    public async Task<ActionResult> GetIntake(Guid id, [FromServices] INsIntakeService intakeService)
+    {
+        var sheet = await _service.GetByIdAsync(id);
+        if (sheet == null) return NotFound();
+
+        var bytes = await intakeService.GetOrGenerateAsync(id);
+        if (bytes == null) return NotFound("Intake document could not be generated or found.");
+
+        return File(bytes, "application/pdf", $"InvoiceIntake_{sheet.ClientShortcode}_{id}.pdf");
+    }
+
+    [HttpPost("{id:guid}/intake/regenerate")]
+    public async Task<ActionResult<SubmitNsResultDto>> RegenerateIntake(Guid id, [FromServices] INsIntakeService intakeService)
+    {
+        var sheet = await _service.GetByIdAsync(id);
+        if (sheet == null) return NotFound();
+
+        var result = await intakeService.GenerateAndStoreAsync(id);
+        return Ok(result);
     }
 }

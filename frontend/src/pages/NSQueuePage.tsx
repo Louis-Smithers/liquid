@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { api } from '@/lib/api'
 import type { NotificationSheetDto } from '@/types/ns-queue'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Lock, Unlock, Trash2, ArrowLeft, Plus, Save } from "lucide-react"
+import { Lock, Unlock, Trash2, ArrowLeft, Plus, Save, ChevronDown, ChevronRight, FileText, FileX } from "lucide-react"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
@@ -22,11 +22,15 @@ interface Invoice {
 }
 
 export function NSQueuePage() {
-  const [view, setView] = useState<'list' | 'builder'>('list')
+  const [view, setView] = useState<'list' | 'builder' | 'detail'>('list')
   const [queues, setQueues] = useState<NotificationSheetDto[]>([])
   const [loading, setLoading] = useState(false)
   const [filter, setFilter] = useState<'Draft' | 'Submitted' | 'All'>('All')
+  const [expandedId, setExpandedId] = useState<string | null>(null)
   
+  const [detailSheetId, setDetailSheetId] = useState<string | null>(null)
+  const [detailSheet, setDetailSheet] = useState<NotificationSheetDto | null>(null)
+
   const [clients, setClients] = useState<Client[]>([])
   const [builderClient, setBuilderClient] = useState<string>('')
   const [builderInvoices, setBuilderInvoices] = useState<Invoice[]>([])
@@ -70,8 +74,18 @@ export function NSQueuePage() {
       fetchQueues()
     } else if (view === 'builder') {
       fetchClients()
+    } else if (view === 'detail' && detailSheetId) {
+      const fetchDetail = async () => {
+        try {
+          const res = await api.get<NotificationSheetDto>(`/api/notificationsheets/${detailSheetId}`)
+          setDetailSheet(res.data)
+        } catch (err) {
+          console.error(err)
+        }
+      }
+      fetchDetail()
     }
-  }, [view])
+  }, [view, detailSheetId])
 
   useEffect(() => {
     if (builderClient) {
@@ -115,8 +129,19 @@ export function NSQueuePage() {
   const submitQueue = async (id: string) => {
     if (!confirm('Submit this draft?')) return
     try {
-      await api.post(`/api/notificationsheets/${id}/submit`)
-      await fetchQueues()
+      const res = await api.post(`/api/notificationsheets/${id}/submit`)
+      const data = res.data // SubmitNsResultDto
+      let msg = `Submitted. Merged ${data.mergedInvoiceCount} invoice document(s).`
+      if (data.missingDocumentInvoiceNumbers && data.missingDocumentInvoiceNumbers.length > 0) {
+        msg += `\nNo document for: ${data.missingDocumentInvoiceNumbers.join(', ')}`
+      }
+      alert(msg)
+      if (view === 'detail' && detailSheetId === id) {
+        const detailRes = await api.get<NotificationSheetDto>(`/api/notificationsheets/${id}`)
+        setDetailSheet(detailRes.data)
+      } else {
+        await fetchQueues()
+      }
       await refresh()
     } catch (err: any) {
       alert(err.response?.data || "Failed to submit.")
@@ -135,6 +160,21 @@ export function NSQueuePage() {
       link.parentNode?.removeChild(link)
     } catch (err) {
       alert("Failed to generate PDF.")
+    }
+  }
+
+  const downloadIntake = async (id: string, shortcode: string) => {
+    try {
+      const res = await api.get(`/api/notificationsheets/${id}/intake`, { responseType: 'blob' })
+      const url = window.URL.createObjectURL(new Blob([res.data]))
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', `InvoiceIntake_${shortcode}_${id}.pdf`)
+      document.body.appendChild(link)
+      link.click()
+      link.parentNode?.removeChild(link)
+    } catch (err) {
+      alert("Failed to download intake document.")
     }
   }
 
@@ -366,6 +406,110 @@ export function NSQueuePage() {
     )
   }
 
+  if (view === 'detail' && detailSheet) {
+    return (
+      <div className="flex flex-col h-full bg-[#F7F9FB] overflow-hidden">
+        <div className="flex items-center justify-between p-6 border-b bg-white shrink-0">
+          <div className="flex items-center space-x-4">
+            <Button variant="ghost" size="icon" onClick={() => setView('list')}><ArrowLeft className="h-5 w-5" /></Button>
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight">{detailSheet.displayName}</h1>
+              <div className="flex items-center space-x-2 mt-1">
+                <Badge variant="secondary">{detailSheet.clientShortcode}</Badge>
+                <Badge variant="outline" className={detailSheet.status === 'Draft' ? 'bg-[#FEF9C3] text-[#A16207]' : 'bg-[#DCFCE7] text-[#15803D]'}>
+                  {detailSheet.status}
+                </Badge>
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center space-x-4">
+            {detailSheet.status === 'Draft' && (
+              <Button onClick={() => submitQueue(detailSheet.id)} className="bg-green-600 hover:bg-green-700">
+                <Save className="h-4 w-4 mr-2" />
+                Submit
+              </Button>
+            )}
+            {(detailSheet.status === 'Submitted' || detailSheet.hasIntake) && (
+              <Button variant="outline" onClick={() => downloadIntake(detailSheet.id, detailSheet.clientShortcode)}>
+                Download Intake
+              </Button>
+            )}
+            {detailSheet.status === 'Submitted' && (
+              <Button variant="outline" onClick={() => downloadPdf(detailSheet.id, detailSheet.clientShortcode)}>
+                Download PDF
+              </Button>
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-1 overflow-hidden">
+          <div className="flex-1 flex flex-col p-6 overflow-y-auto">
+            <div className="bg-white rounded-lg border shadow-sm flex-1 flex flex-col min-h-0">
+              <div className="p-4 border-b bg-slate-50">
+                <h3 className="font-semibold text-sm">Invoices</h3>
+              </div>
+              <div className="p-4 space-y-6 overflow-y-auto">
+                {Array.from(new Set(detailSheet.items.map(i => i.debtorName))).map(debtor => (
+                  <div key={debtor}>
+                    <h4 className="font-semibold text-sm mb-2 text-muted-foreground">{debtor}</h4>
+                    <Table>
+                      <TableBody>
+                        {detailSheet.items.filter(i => i.debtorName === debtor).map(i => (
+                          <TableRow key={i.id}>
+                            <TableCell className="w-10">
+                              {i.hasDocument ? <span title="Has document"><FileText className="h-4 w-4 text-green-600" /></span> : <span title="No document"><FileX className="h-4 w-4 text-red-400" /></span>}
+                            </TableCell>
+                            <TableCell className="font-medium text-blue-600">{i.invoiceNumber}</TableCell>
+                            <TableCell className="text-muted-foreground text-xs">{new Date(i.date).toISOString().split('T')[0]}</TableCell>
+                            <TableCell className="text-right font-semibold">${i.includedAmount.toLocaleString(undefined, {minimumFractionDigits:2})}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          
+          <div className="w-80 bg-white border-l shadow-sm flex flex-col shrink-0 overflow-y-auto">
+            <div className="p-4 border-b bg-slate-50">
+              <h3 className="font-semibold text-sm uppercase text-muted-foreground tracking-wider">Financials</h3>
+            </div>
+            <div className="p-6 space-y-4 text-sm">
+              <div className="flex justify-between font-semibold">
+                <span>Total Amount</span>
+                <span>${detailSheet.totalAmount.toLocaleString(undefined, {minimumFractionDigits:2})}</span>
+              </div>
+              <div className="flex justify-between text-muted-foreground">
+                <span>Total Fee</span>
+                <span>-${detailSheet.totalFee.toLocaleString(undefined, {minimumFractionDigits:2})}</span>
+              </div>
+              <div className="flex justify-between text-muted-foreground">
+                <span>Reserves Held</span>
+                <span>-${detailSheet.reservesToHoldBack.toLocaleString(undefined, {minimumFractionDigits:2})}</span>
+              </div>
+              <div className="flex justify-between text-muted-foreground">
+                <span>Reserves Released</span>
+                <span>+${detailSheet.cashReservesToRelease.toLocaleString(undefined, {minimumFractionDigits:2})}</span>
+              </div>
+              <div className="flex justify-between text-muted-foreground">
+                <span>Other Adjustments</span>
+                <span>{detailSheet.otherAdjustments >= 0 ? '+' : ''}${detailSheet.otherAdjustments.toLocaleString(undefined, {minimumFractionDigits:2})}</span>
+              </div>
+              <div className="pt-4 border-t">
+                <div className="p-4 bg-[#EEF2FF] rounded-lg border border-[#C7D2FE]">
+                  <div className="text-xs font-semibold text-[#4648D4] uppercase tracking-wider mb-1">Advance Amount</div>
+                  <div className="text-2xl font-bold text-[#191C1E]">${detailSheet.advanceAmount.toLocaleString(undefined, {minimumFractionDigits:2})}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   // LIST VIEW
   return (
     <div className="flex flex-col w-full h-full min-h-[960px] bg-[#F7F9FB] p-8">
@@ -408,6 +552,7 @@ export function NSQueuePage() {
         <Table>
           <TableHeader className="bg-[#F8FAFC]">
             <TableRow>
+              <TableHead className="w-10"></TableHead>
               <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Display Name</TableHead>
               <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Client</TableHead>
               <TableHead className="text-xs font-semibold text-muted-foreground uppercase tracking-wider text-right">Items</TableHead>
@@ -424,7 +569,13 @@ export function NSQueuePage() {
               <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No queues found.</TableCell></TableRow>
             ) : (
               filteredQueues.map(q => (
-                <TableRow key={q.id} className="h-14">
+                <React.Fragment key={q.id}>
+                <TableRow className="h-14">
+                  <TableCell>
+                    <Button variant="ghost" size="icon" onClick={() => setExpandedId(expandedId === q.id ? null : q.id)}>
+                      {expandedId === q.id ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                    </Button>
+                  </TableCell>
                   <TableCell className="font-semibold text-[#191C1E]">{q.displayName}</TableCell>
                   <TableCell><Badge variant="secondary">{q.clientShortcode}</Badge></TableCell>
                   <TableCell className="text-right font-medium">{q.itemCount}</TableCell>
@@ -439,7 +590,7 @@ export function NSQueuePage() {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
-                      <Button variant="outline" size="sm" onClick={() => {/* Future: Open Builder for existing */}}>Open</Button>
+                      <Button variant="outline" size="sm" onClick={() => { setDetailSheetId(q.id); setView('detail'); }}>Open</Button>
                       {q.status === 'Draft' && (
                         <>
                           <Button variant="outline" size="sm" className="text-green-600 border-green-200 hover:bg-green-50" onClick={() => submitQueue(q.id)}>
@@ -450,14 +601,47 @@ export function NSQueuePage() {
                           </Button>
                         </>
                       )}
-                      {q.status === 'Submitted' && (
-                        <Button variant="outline" size="sm" onClick={() => downloadPdf(q.id, q.clientShortcode)}>
-                          Download PDF
-                        </Button>
+                      {(q.status === 'Submitted' || q.hasIntake) && (
+                        <>
+                          <Button variant="outline" size="sm" onClick={() => downloadIntake(q.id, q.clientShortcode)}>
+                            Intake
+                          </Button>
+                          <Button variant="outline" size="sm" onClick={() => downloadPdf(q.id, q.clientShortcode)}>
+                            PDF
+                          </Button>
+                        </>
                       )}
                     </div>
                   </TableCell>
                 </TableRow>
+                {expandedId === q.id && (
+                  <TableRow>
+                    <TableCell colSpan={8} className="bg-slate-50 p-4">
+                      <div className="space-y-4">
+                        {Array.from(new Set(q.items.map(i => i.debtorName))).map(debtor => (
+                          <div key={debtor}>
+                            <h4 className="font-semibold text-sm mb-2">{debtor}</h4>
+                            <Table>
+                              <TableBody>
+                                {q.items.filter(i => i.debtorName === debtor).map(i => (
+                                  <TableRow key={i.id}>
+                                    <TableCell className="w-10">
+                                      {i.hasDocument ? <span title="Has document"><FileText className="h-4 w-4 text-green-600" /></span> : <span title="No document"><FileX className="h-4 w-4 text-red-400" /></span>}
+                                    </TableCell>
+                                    <TableCell className="font-medium text-blue-600">{i.invoiceNumber}</TableCell>
+                                    <TableCell className="text-muted-foreground text-xs">{new Date(i.date).toISOString().split('T')[0]}</TableCell>
+                                    <TableCell className="text-right font-semibold">${i.includedAmount.toLocaleString(undefined, {minimumFractionDigits:2})}</TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        ))}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )}
+                </React.Fragment>
               ))
             )}
           </TableBody>

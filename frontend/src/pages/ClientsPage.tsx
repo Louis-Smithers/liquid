@@ -8,7 +8,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Input } from "@/components/ui/input"
-import { Search, SlidersHorizontal, Settings2, Check, AlertTriangle, ShoppingCart } from "lucide-react"
+import { Search, SlidersHorizontal, Settings2, ShoppingCart } from "lucide-react"
 import { api } from "@/lib/api"
 import { ClientDrawer } from "@/components/clients/ClientDrawer"
 import { AddClientModal } from "@/components/clients/AddClientModal"
@@ -38,8 +38,14 @@ export interface Client {
 
 type SortDirection = "asc" | "desc" | null;
 
+interface ClientStat {
+  shortcode: string
+  verifiedPercent: number
+}
+
 export function ClientsPage() {
   const [clients, setClients] = useState<Client[]>([])
+  const [clientStats, setClientStats] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedClient, setSelectedClient] = useState<Client | null>(null)
@@ -51,8 +57,14 @@ export function ClientsPage() {
   useEffect(() => {
     const fetchClients = async () => {
       try {
-        const response = await api.get<Client[]>('/api/clients')
-        setClients(response.data)
+        const [clientsRes, statsRes] = await Promise.all([
+          api.get<Client[]>('/api/clients'),
+          api.get<ClientStat[]>('/api/clients/stats')
+        ])
+        setClients(clientsRes.data)
+        const statsMap: Record<string, number> = {}
+        for (const s of statsRes.data) statsMap[s.shortcode] = s.verifiedPercent
+        setClientStats(statsMap)
       } catch (error) {
         console.error("Failed to fetch clients:", error)
       } finally {
@@ -188,7 +200,7 @@ export function ClientsPage() {
             <TableHeader className="bg-[#F7F9FB] sticky top-0 z-10">
               <TableRow className="border-b border-[rgba(199,196,215,0.5)] hover:bg-transparent">
                 <SortableTableHead
-                  label="CADENCE NAME"
+                  label="CLIENT NAME"
                   columnKey="cadenceName"
                   currentSortColumn={sortColumn}
                   currentSortDirection={sortDirection}
@@ -248,17 +260,21 @@ export function ClientsPage() {
                       </div>
                     </TableCell>
 
-                    {/* Col 2: Status indicator */}
+                    {/* Col 2: Verified % */}
                     <TableCell className="text-center pl-8 py-3">
-                      {client.active ? (
-                        <div className="inline-flex items-center justify-center w-5 h-[13px] bg-[#DCFCE7] rounded-full">
-                          <Check className="h-[7px] w-[9.5px] text-[#15803D]" />
-                        </div>
-                      ) : (
-                        <div className="inline-flex items-center justify-center w-5 h-[13px] bg-[#FEF9C3] rounded-full">
-                          <AlertTriangle className="h-[7px] w-[9.5px] text-[#A16207]" />
-                        </div>
-                      )}
+                      {(() => {
+                        const pct = clientStats[client.shortcode]
+                        if (pct == null) return <span className="text-xs text-muted-foreground">—</span>
+                        const pctDisplay = (pct * 100).toFixed(1) + '%'
+                        const color = pct >= 0.8 ? '#15803D' : pct >= 0.5 ? '#A16207' : '#B91C1C'
+                        const bg = pct >= 0.8 ? '#DCFCE7' : pct >= 0.5 ? '#FEF9C3' : '#FEE2E2'
+                        return (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold tabular-nums"
+                            style={{ color, backgroundColor: bg }}>
+                            {pctDisplay}
+                          </span>
+                        )
+                      })()}
                     </TableCell>
 
                     {/* Col 3: Email */}

@@ -112,7 +112,8 @@ public class NotificationSheetService : INotificationSheetService
             Date = new DateTimeOffset(invoice.Date, TimeOnly.MinValue, TimeSpan.Zero),
             IncludedAmount = item.IncludedAmount,
             OverrideInitialFee = item.OverrideInitialFee,
-            OverrideReserveFee = item.OverrideReserveFee
+            OverrideReserveFee = item.OverrideReserveFee,
+            HasDocument = !string.IsNullOrEmpty(invoice.DocumentPath)
         };
     }
 
@@ -205,8 +206,11 @@ public class NotificationSheetService : INotificationSheetService
                 Date = i.Invoice != null ? new DateTimeOffset(i.Invoice.Date, TimeOnly.MinValue, TimeSpan.Zero) : DateTimeOffset.MinValue,
                 IncludedAmount = i.IncludedAmount,
                 OverrideInitialFee = i.OverrideInitialFee,
-                OverrideReserveFee = i.OverrideReserveFee
-            }).ToList()
+                OverrideReserveFee = i.OverrideReserveFee,
+                HasDocument = i.Invoice != null && !string.IsNullOrEmpty(i.Invoice.DocumentPath)
+            }).ToList(),
+            IntakeDocumentPath = sheet.IntakeDocumentPath,
+            IntakeGeneratedAt = sheet.IntakeGeneratedAt
         };
     }
 }

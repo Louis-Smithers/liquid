@@ -29,6 +29,7 @@ builder.Services.AddScoped<IDebtorService, DebtorService>();
 builder.Services.AddScoped<IInvoiceService, InvoiceService>();
 builder.Services.AddScoped<INotificationSheetService, NotificationSheetService>();
 builder.Services.AddScoped<INsPdfService, NsPdfService>();
+builder.Services.AddScoped<INsIntakeService, NsIntakeService>();
 builder.Services.AddScoped<IImportQueueService, ImportQueueService>();
 builder.Services.AddHttpClient<IOcrService, OcrService>();
 builder.Services.AddHttpClient<ISupabaseStorage, SupabaseStorageService>();
