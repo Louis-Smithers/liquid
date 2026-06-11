@@ -31,8 +31,8 @@ export interface NotificationSheetDto {
   otherAdjustments: number
   advanceAmount: number
   notes?: string
-  intakeDocumentPath?: string
-  intakeGeneratedAt?: string
-  hasIntake: boolean
+  gcsNsObjectPath?: string
+  gcsIntakeObjectPath?: string
+  hasGcsFiles: boolean
   items: NotificationSheetItemDto[]
 }

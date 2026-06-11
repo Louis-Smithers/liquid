@@ -29,8 +29,8 @@ public class NotificationSheet
 
     public string? Notes { get; set; }
     
-    public string? IntakeDocumentPath { get; set; }
-    public DateTimeOffset? IntakeGeneratedAt { get; set; }
+    public string? GcsNsObjectPath { get; set; }
+    public string? GcsIntakeObjectPath { get; set; }
     
     public ICollection<NotificationSheetItem> Items { get; set; } = new List<NotificationSheetItem>();
 }

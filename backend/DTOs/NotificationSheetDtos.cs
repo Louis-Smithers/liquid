@@ -26,9 +26,9 @@ public class NotificationSheetDto
     public decimal AdvanceAmount { get; set; }
     public string? Notes { get; set; }
 
-    public string? IntakeDocumentPath { get; set; }
-    public DateTimeOffset? IntakeGeneratedAt { get; set; }
-    public bool HasIntake => IntakeDocumentPath != null;
+    public string? GcsNsObjectPath { get; set; }
+    public string? GcsIntakeObjectPath { get; set; }
+    public bool HasGcsFiles => GcsNsObjectPath != null;
 
     public List<NotificationSheetItemDto> Items { get; set; } = new();
 }
@@ -84,4 +84,7 @@ public class SubmitNsResultDto
     public int MergedInvoiceCount { get; set; }
     public List<string> MissingDocumentInvoiceNumbers { get; set; } = new();
     public string? Message { get; set; }
+    public string? GcsNsObjectPath { get; set; }
+    public string? GcsIntakeObjectPath { get; set; }
+    public string? GcsUploadMessage { get; set; }
 }

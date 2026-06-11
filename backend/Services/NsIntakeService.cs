@@ -13,11 +13,22 @@ public class NsIntakeService : INsIntakeService
 {
     private readonly AppDbContext _db;
     private readonly ISupabaseStorage _storage;
+    private readonly IGcsService _gcs;
+    private readonly INsPdfService _pdfService;
 
-    public NsIntakeService(AppDbContext db, ISupabaseStorage storage)
+    public NsIntakeService(AppDbContext db, ISupabaseStorage storage, IGcsService gcs, INsPdfService pdfService)
     {
         _db = db;
         _storage = storage;
+        _gcs = gcs;
+        _pdfService = pdfService;
+    }
+
+    private static (string ns, string intake) BuildObjectPaths(string shortcode, DateTimeOffset createdAt, string shortId)
+    {
+        var datePart = createdAt.ToLocalTime().ToString("MM-dd-yy");
+        var folder = $"{shortcode}/{shortcode} {datePart}";
+        return ($"{folder}/NS-{shortId}.pdf", $"{folder}/Invoice intake-{shortId}.pdf");
     }
 
     public async Task<SubmitNsResultDto> GenerateAndStoreAsync(Guid sheetId)
@@ -25,6 +36,7 @@ public class NsIntakeService : INsIntakeService
         var sheet = await _db.NotificationSheets
             .Include(s => s.Items)
             .ThenInclude(i => i.Invoice)
+            .ThenInclude(i => i.Debtor)
             .FirstOrDefaultAsync(s => s.Id == sheetId);
 
         if (sheet == null)
@@ -78,43 +90,37 @@ public class NsIntakeService : INsIntakeService
             }
         }
 
-        var pdfBytes = BuildPdf(images);
+        var intakePdfBytes = BuildPdf(images);
         
-        var uploadPath = await _storage.UploadBytesAsync(pdfBytes, "application/pdf", "ns-intake", $"{sheetId}.pdf");
+        var sheetDto = NotificationSheetService.MapToDto(sheet);
+        var nsPdfBytes = _pdfService.GenerateScheduleOfAccounts(sheetDto);
         
-        if (uploadPath != null)
+        var shortId = sheetId.ToString()[..8];
+        var (nsPath, intakePath) = BuildObjectPaths(sheet.ClientShortcode, sheet.CreatedAt, shortId);
+
+        var gcsNsObjectPath = await _gcs.UploadAsync(nsPdfBytes, "application/pdf", nsPath);
+        var gcsIntakeObjectPath = await _gcs.UploadAsync(intakePdfBytes, "application/pdf", intakePath);
+        
+        if (gcsNsObjectPath != null || gcsIntakeObjectPath != null)
         {
-            sheet.IntakeDocumentPath = uploadPath;
-            sheet.IntakeGeneratedAt = DateTimeOffset.UtcNow;
+            sheet.GcsNsObjectPath = gcsNsObjectPath;
+            sheet.GcsIntakeObjectPath = gcsIntakeObjectPath;
             await _db.SaveChangesAsync();
-            
-            return new SubmitNsResultDto 
-            { 
-                IntakeGenerated = true, 
-                MergedInvoiceCount = mergedCount, 
-                MissingDocumentInvoiceNumbers = missing 
-            };
         }
         
         return new SubmitNsResultDto 
         { 
-            IntakeGenerated = false, 
+            IntakeGenerated = true, 
             MergedInvoiceCount = mergedCount, 
             MissingDocumentInvoiceNumbers = missing,
-            Message = "storage not configured; intake available via on-the-fly download"
+            GcsNsObjectPath = gcsNsObjectPath,
+            GcsIntakeObjectPath = gcsIntakeObjectPath,
+            GcsUploadMessage = _gcs.Configured ? null : "GCS not configured"
         };
     }
 
     public async Task<byte[]?> GetOrGenerateAsync(Guid sheetId)
     {
-        var sheet = await _db.NotificationSheets.FindAsync(sheetId);
-        if (sheet != null && !string.IsNullOrEmpty(sheet.IntakeDocumentPath))
-        {
-            var bytes = await _storage.DownloadAsync(sheet.IntakeDocumentPath);
-            if (bytes != null) return bytes;
-        }
-        
-        // If not found or not stored, regenerate on the fly
         var sheetFull = await _db.NotificationSheets
             .Include(s => s.Items)
             .ThenInclude(i => i.Invoice)

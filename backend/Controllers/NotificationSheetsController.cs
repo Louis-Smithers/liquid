@@ -136,26 +136,62 @@ public class NotificationSheetsController : ControllerBase
     }
 
     [HttpGet("{id:guid}/pdf")]
-    public async Task<ActionResult> GetPdf(Guid id, [FromServices] INsPdfService pdfService)
+    public async Task<ActionResult> GetPdf(Guid id, [FromServices] INsPdfService pdfService, [FromServices] IGcsService gcsService)
     {
         var sheet = await _service.GetByIdAsync(id);
         if (sheet == null) return NotFound();
         if (sheet.Status != "Submitted") return BadRequest("Only submitted sheets can generate a PDF.");
+
+        if (!string.IsNullOrEmpty(sheet.GcsNsObjectPath))
+        {
+            var url = await gcsService.GetSignedUrlAsync(sheet.GcsNsObjectPath, TimeSpan.FromMinutes(15));
+            if (url != null) return Redirect(url);
+        }
 
         var pdfBytes = pdfService.GenerateScheduleOfAccounts(sheet);
         return File(pdfBytes, "application/pdf", $"ScheduleOfAccounts_{sheet.ClientShortcode}_{id}.pdf");
     }
 
     [HttpGet("{id:guid}/intake")]
-    public async Task<ActionResult> GetIntake(Guid id, [FromServices] INsIntakeService intakeService)
+    public async Task<ActionResult> GetIntake(Guid id, [FromServices] INsIntakeService intakeService, [FromServices] IGcsService gcsService)
     {
         var sheet = await _service.GetByIdAsync(id);
         if (sheet == null) return NotFound();
+
+        if (!string.IsNullOrEmpty(sheet.GcsIntakeObjectPath))
+        {
+            var url = await gcsService.GetSignedUrlAsync(sheet.GcsIntakeObjectPath, TimeSpan.FromMinutes(15));
+            if (url != null) return Redirect(url);
+        }
 
         var bytes = await intakeService.GetOrGenerateAsync(id);
         if (bytes == null) return NotFound("Intake document could not be generated or found.");
 
         return File(bytes, "application/pdf", $"InvoiceIntake_{sheet.ClientShortcode}_{id}.pdf");
+    }
+
+    [HttpGet("{id:guid}/pdf/url")]
+    public async Task<ActionResult> GetPdfUrl(Guid id, [FromServices] IGcsService gcsService)
+    {
+        var sheet = await _service.GetByIdAsync(id);
+        if (sheet == null) return NotFound();
+
+        if (string.IsNullOrEmpty(sheet.GcsNsObjectPath)) return NotFound("No GCS object stored for this sheet.");
+
+        var url = await gcsService.GetSignedUrlAsync(sheet.GcsNsObjectPath, TimeSpan.FromMinutes(15));
+        return url is null ? NotFound("Failed to generate signed URL.") : Ok(new { signedUrl = url });
+    }
+
+    [HttpGet("{id:guid}/intake/url")]
+    public async Task<ActionResult> GetIntakeUrl(Guid id, [FromServices] IGcsService gcsService)
+    {
+        var sheet = await _service.GetByIdAsync(id);
+        if (sheet == null) return NotFound();
+
+        if (string.IsNullOrEmpty(sheet.GcsIntakeObjectPath)) return NotFound("No GCS object stored for this sheet.");
+
+        var url = await gcsService.GetSignedUrlAsync(sheet.GcsIntakeObjectPath, TimeSpan.FromMinutes(15));
+        return url is null ? NotFound("Failed to generate signed URL.") : Ok(new { signedUrl = url });
     }
 
     [HttpPost("{id:guid}/intake/regenerate")]

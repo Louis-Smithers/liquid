@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Smithers.API.Data;
+using Smithers.API.HealthChecks;
 using Smithers.API.Services;
 
 // Load .env file before builder so env vars are available to configuration
@@ -35,8 +36,17 @@ builder.Services.AddHttpClient<IOcrService, OcrService>();
 builder.Services.AddHttpClient<ISupabaseStorage, SupabaseStorageService>();
 builder.Services.AddScoped<IOcrPipelineService, OcrPipelineService>();
 builder.Services.AddHttpClient<IAdminService, AdminService>();
-
+builder.Services.AddScoped<IGcsService, GcsService>();
 builder.Services.AddHostedService<StagingCleanupService>();
+
+// Health monitoring: periodic checks + Discord webhook alerts on state changes
+builder.Services.AddHttpClient<IAlertNotifier, DiscordNotifier>();
+builder.Services.AddHealthChecks()
+    .AddCheck<DatabaseHealthCheck>("database")
+    .AddCheck<SupabaseHealthCheck>("supabase")
+    .AddCheck<GcsHealthCheck>("gcs")
+    .AddCheck<OcrQueueHealthCheck>("ocr-queue");
+builder.Services.AddHostedService<HealthMonitorService>();
 
 builder.Services.AddAuthorizationBuilder()
     .SetFallbackPolicy(new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
@@ -97,6 +107,9 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+
+// Public liveness/readiness endpoint (bypasses the authenticated-user fallback policy)
+app.MapHealthChecks("/health").AllowAnonymous();
 
 using (var scope = app.Services.CreateScope())
 {

@@ -168,7 +168,7 @@ public class NotificationSheetService : INotificationSheetService
             .CountAsync();
     }
 
-    private static NotificationSheetDto MapToDto(NotificationSheet sheet)
+    internal static NotificationSheetDto MapToDto(NotificationSheet sheet)
     {
         var totalAmount = sheet.Items.Sum(i => i.IncludedAmount);
         var itemCount = sheet.Items.Count;
@@ -209,8 +209,8 @@ public class NotificationSheetService : INotificationSheetService
                 OverrideReserveFee = i.OverrideReserveFee,
                 HasDocument = i.Invoice != null && !string.IsNullOrEmpty(i.Invoice.DocumentPath)
             }).ToList(),
-            IntakeDocumentPath = sheet.IntakeDocumentPath,
-            IntakeGeneratedAt = sheet.IntakeGeneratedAt
+            GcsNsObjectPath = sheet.GcsNsObjectPath,
+            GcsIntakeObjectPath = sheet.GcsIntakeObjectPath
         };
     }
 }

@@ -429,7 +429,7 @@ export function NSQueuePage() {
                 Submit
               </Button>
             )}
-            {(detailSheet.status === 'Submitted' || detailSheet.hasIntake) && (
+            {(detailSheet.status === 'Submitted' || detailSheet.hasGcsFiles) && (
               <Button variant="outline" onClick={() => downloadIntake(detailSheet.id, detailSheet.clientShortcode)}>
                 Download Intake
               </Button>
@@ -601,7 +601,7 @@ export function NSQueuePage() {
                           </Button>
                         </>
                       )}
-                      {(q.status === 'Submitted' || q.hasIntake) && (
+                      {(q.status === 'Submitted' || q.hasGcsFiles) && (
                         <>
                           <Button variant="outline" size="sm" onClick={() => downloadIntake(q.id, q.clientShortcode)}>
                             Intake

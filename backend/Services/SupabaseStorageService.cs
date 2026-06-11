@@ -10,7 +10,7 @@ namespace Smithers.API.Services;
 public interface ISupabaseStorage
 {
     Task<string?> UploadAsync(IFormFile file, string bucket, string path);
-    Task<string?> UploadBytesAsync(byte[] data, string contentType, string bucket, string path);
+
     Task<bool> DeleteAsync(string pathWithBucket);
     Task<byte[]?> DownloadAsync(string pathWithBucket);
 }
@@ -73,26 +73,6 @@ public class SupabaseStorageService : ISupabaseStorage
         if (response.IsSuccessStatusCode)
             return await response.Content.ReadAsByteArrayAsync();
 
-        return null;
-    }
-
-    public async Task<string?> UploadBytesAsync(byte[] data, string contentType, string bucket, string path)
-    {
-        if (!Configured) return null;
-
-        var request = new HttpRequestMessage(HttpMethod.Post, $"{_url}/storage/v1/object/{bucket}/{path}");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _key);
-        request.Headers.Add("x-upsert", "true");
-
-        using var content = new ByteArrayContent(data);
-        if (!string.IsNullOrEmpty(contentType))
-            content.Headers.ContentType = new MediaTypeHeaderValue(contentType);
-        request.Content = content;
-
-        var response = await _http.SendAsync(request);
-        if (response.IsSuccessStatusCode) return $"{bucket}/{path}";
-
-        Console.WriteLine($"Supabase Storage upload bytes error: {await response.Content.ReadAsStringAsync()}");
         return null;
     }
 }
