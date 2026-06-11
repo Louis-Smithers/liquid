@@ -8,7 +8,7 @@ namespace Smithers.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize]
+[Authorize(Policy = "StaffOnly")]
 public class OcrController : ControllerBase
 {
     private readonly IOcrService _service;

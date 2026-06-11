@@ -6,6 +6,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Badge } from '../components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '../components/ui/dialog';
 import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 
 interface AccessRequest {
   id: string;
@@ -17,19 +19,28 @@ interface AccessRequest {
   createdAt: string;
 }
 
+interface ClientOption {
+  shortcode: string;
+  cadenceName: string;
+}
+
 export function AdminPage() {
   const { session, role } = useAuth();
   const [requests, setRequests] = useState<AccessRequest[]>([]);
   const [loading, setLoading] = useState(true);
-  
+  const [clients, setClients] = useState<ClientOption[]>([]);
+
   const [approveId, setApproveId] = useState<string | null>(null);
   const [denyId, setDenyId] = useState<string | null>(null);
   const [tempPassword, setTempPassword] = useState('');
+  const [approveRole, setApproveRole] = useState<'user' | 'client'>('user');
+  const [approveClientShortcode, setApproveClientShortcode] = useState('');
   const [alertMessage, setAlertMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (role !== 'admin') return;
     fetchRequests();
+    fetchClients();
   }, [role]);
 
   const fetchRequests = async () => {
@@ -37,9 +48,7 @@ export function AdminPage() {
       const res = await fetch('/api/admin/requests', {
         headers: { Authorization: `Bearer ${session?.access_token}` },
       });
-      if (res.ok) {
-        setRequests(await res.json());
-      }
+      if (res.ok) setRequests(await res.json());
     } catch (e) {
       console.error(e);
     } finally {
@@ -47,8 +56,30 @@ export function AdminPage() {
     }
   };
 
+  const fetchClients = async () => {
+    try {
+      const res = await fetch('/api/clients', {
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      if (res.ok) setClients(await res.json());
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const openApproveDialog = (id: string) => {
+    setApproveId(id);
+    setApproveRole('user');
+    setApproveClientShortcode('');
+    setTempPassword('');
+  };
+
   const handleApprove = async () => {
     if (!approveId || !tempPassword) return;
+    if (approveRole === 'client' && !approveClientShortcode) {
+      setAlertMessage('Please select a client for a client account.');
+      return;
+    }
 
     const res = await fetch(`/api/admin/requests/${approveId}/approve`, {
       method: 'PATCH',
@@ -56,16 +87,23 @@ export function AdminPage() {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${session?.access_token}`,
       },
-      body: JSON.stringify({ tempPassword }),
+      body: JSON.stringify({
+        tempPassword,
+        role: approveRole,
+        clientShortcode: approveRole === 'client' ? approveClientShortcode : null,
+      }),
     });
 
     if (res.ok) {
-      setAlertMessage(`User approved. Temp password: ${tempPassword}`);
+      const roleLabel = approveRole === 'client'
+        ? `client account (${approveClientShortcode})`
+        : 'liquid user account';
+      setAlertMessage(`Approved as ${roleLabel}. Temp password: ${tempPassword}`);
       setApproveId(null);
       setTempPassword('');
       fetchRequests();
     } else {
-      setAlertMessage('Failed to approve');
+      setAlertMessage('Failed to approve. Check that the client shortcode is valid.');
       setApproveId(null);
     }
   };
@@ -131,7 +169,7 @@ export function AdminPage() {
                       <TableCell>
                         {r.status === 'Pending' && (
                           <div className="flex gap-2">
-                            <Button size="sm" onClick={() => setApproveId(r.id)}>Approve</Button>
+                            <Button size="sm" onClick={() => openApproveDialog(r.id)}>Approve</Button>
                             <Button size="sm" variant="outline" onClick={() => setDenyId(r.id)}>Deny</Button>
                           </div>
                         )}
@@ -149,15 +187,58 @@ export function AdminPage() {
       </Tabs>
 
       <Dialog open={!!approveId} onOpenChange={(open) => !open && setApproveId(null)}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Approve Request</DialogTitle>
-            <DialogDescription>Enter a temporary password for this user.</DialogDescription>
+            <DialogDescription>Choose the account type and set a temporary password.</DialogDescription>
           </DialogHeader>
-          <Input value={tempPassword} onChange={e => setTempPassword(e.target.value)} type="text" placeholder="Temporary Password" />
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Account Type</Label>
+              <Select value={approveRole} onValueChange={(v) => setApproveRole(v as 'user' | 'client')}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="user">Liquid User (full internal access)</SelectItem>
+                  <SelectItem value="client">Client (scoped to one client)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {approveRole === 'client' && (
+              <div className="space-y-2">
+                <Label>Linked Client</Label>
+                <Select value={approveClientShortcode} onValueChange={setApproveClientShortcode}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a client..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {clients.map(c => (
+                      <SelectItem key={c.shortcode} value={c.shortcode}>
+                        {c.cadenceName} ({c.shortcode})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label>Temporary Password</Label>
+              <Input
+                value={tempPassword}
+                onChange={e => setTempPassword(e.target.value)}
+                type="text"
+                placeholder="Temporary Password"
+              />
+            </div>
+          </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setApproveId(null)}>Cancel</Button>
-            <Button onClick={handleApprove}>Approve</Button>
+            <Button onClick={handleApprove} disabled={!tempPassword || (approveRole === 'client' && !approveClientShortcode)}>
+              Approve
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

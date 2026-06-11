@@ -55,17 +55,24 @@ public class AdminService : IAdminService
             .ToListAsync();
     }
 
-    public async Task<bool> ApproveRequestAsync(Guid requestId, string tempPassword)
+    public async Task<bool> ApproveRequestAsync(Guid requestId, string tempPassword, string role, string? clientShortcode)
     {
         var request = await _context.UserAccessRequests.FindAsync(requestId);
         if (request == null || request.Status != "Pending") return false;
+
+        if (role == "client" && string.IsNullOrWhiteSpace(clientShortcode))
+            return false;
+
+        object appMetadata = role == "client"
+            ? new { role = "client", client_shortcode = clientShortcode, must_change_password = true }
+            : (object)new { role = "user", must_change_password = true };
 
         var payload = new
         {
             email = request.Email,
             password = tempPassword,
             email_confirm = true,
-            app_metadata = new { role = "user", must_change_password = true },
+            app_metadata = appMetadata,
             user_metadata = new { first_name = request.FirstName, last_name = request.LastName, username = request.UsernameWanted }
         };
 

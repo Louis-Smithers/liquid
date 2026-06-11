@@ -55,6 +55,7 @@ public class NotificationSheetsController : ControllerBase
     }
 
     [HttpPost]
+    [Authorize(Policy = "StaffOnly")]
     public async Task<ActionResult<NotificationSheetDto>> Create(CreateNotificationSheetDto dto)
     {
         var created = await _service.CreateAsync(dto, GetUserId());
@@ -62,6 +63,7 @@ public class NotificationSheetsController : ControllerBase
     }
 
     [HttpPatch("{id:guid}")]
+    [Authorize(Policy = "StaffOnly")]
     public async Task<ActionResult> Update(Guid id, UpdateNotificationSheetDto dto)
     {
         var updated = await _service.UpdateAsync(id, dto, GetUserId());
@@ -69,6 +71,7 @@ public class NotificationSheetsController : ControllerBase
     }
 
     [HttpDelete("{id:guid}")]
+    [Authorize(Policy = "StaffOnly")]
     public async Task<ActionResult> Delete(Guid id)
     {
         try
@@ -87,6 +90,7 @@ public class NotificationSheetsController : ControllerBase
     }
 
     [HttpPost("{id:guid}/items")]
+    [Authorize(Policy = "StaffOnly")]
     public async Task<ActionResult<NotificationSheetItemDto>> AddItem(Guid id, AddNsQueueItemDto dto)
     {
         try
@@ -101,6 +105,7 @@ public class NotificationSheetsController : ControllerBase
     }
 
     [HttpDelete("{id:guid}/items/{itemId:guid}")]
+    [Authorize(Policy = "StaffOnly")]
     public async Task<ActionResult> RemoveItem(Guid id, Guid itemId)
     {
         var removed = await _service.RemoveItemAsync(id, itemId);
@@ -108,6 +113,7 @@ public class NotificationSheetsController : ControllerBase
     }
 
     [HttpPost("{id:guid}/submit")]
+    [Authorize(Policy = "StaffOnly")]
     public async Task<ActionResult<SubmitNsResultDto>> Submit(Guid id, [FromServices] INsIntakeService intakeService)
     {
         var sheet = await _service.GetByIdAsync(id);
@@ -195,6 +201,7 @@ public class NotificationSheetsController : ControllerBase
     }
 
     [HttpPost("{id:guid}/intake/regenerate")]
+    [Authorize(Policy = "StaffOnly")]
     public async Task<ActionResult<SubmitNsResultDto>> RegenerateIntake(Guid id, [FromServices] INsIntakeService intakeService)
     {
         var sheet = await _service.GetByIdAsync(id);

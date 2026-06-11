@@ -7,34 +7,54 @@ namespace Smithers.API.Services;
 public class DebtorService : IDebtorService
 {
     private readonly AppDbContext _context;
+    private readonly ICurrentUserService _currentUser;
 
-    public DebtorService(AppDbContext context)
+    public DebtorService(AppDbContext context, ICurrentUserService currentUser)
     {
         _context = context;
+        _currentUser = currentUser;
     }
+
+    private static DebtorDto ToDto(Smithers.API.Models.Debtor d) =>
+        new(d.Id, d.Name, d.CadenceName, d.Group, d.Active, d.Dnc, d.Contact, d.Email, d.Phone,
+            d.Address, d.City, d.Province, d.PostalCode, d.Notes, d.Language, d.PreferredContactMethod);
 
     public async Task<IEnumerable<DebtorDto>> GetAllAsync()
     {
+        // Client users see only debtors reachable through their own invoices
+        if (_currentUser.IsClient)
+            return await GetByClientAsync(_currentUser.ClientShortcode!);
+
         return await _context.Debtors
-            .Select(d => new DebtorDto(d.Id, d.Name, d.CadenceName, d.Group, d.Active, d.Dnc, d.Contact, d.Email, d.Phone, d.Address, d.City, d.Province, d.PostalCode, d.Notes, d.Language, d.PreferredContactMethod))
+            .Select(d => ToDto(d))
             .ToListAsync();
     }
 
     public async Task<IEnumerable<DebtorDto>> GetByClientAsync(string shortcode)
     {
-        // Debtors that have at least one purchased invoice for this client
+        if (_currentUser.IsClient && shortcode != _currentUser.ClientShortcode)
+            return Enumerable.Empty<DebtorDto>();
+
         return await _context.Invoices
             .Where(p => p.LiquidClient == shortcode)
             .Select(p => p.Debtor)
             .Distinct()
-            .Select(d => new DebtorDto(d!.Id, d.Name, d.CadenceName, d.Group, d.Active, d.Dnc, d.Contact, d.Email, d.Phone, d.Address, d.City, d.Province, d.PostalCode, d.Notes, d.Language, d.PreferredContactMethod))
+            .Select(d => ToDto(d!))
             .ToListAsync();
     }
 
     public async Task<DebtorDto?> GetByIdAsync(Guid id)
     {
+        if (_currentUser.IsClient)
+        {
+            // Verify the debtor belongs to the client's invoices
+            var owned = await _context.Invoices
+                .AnyAsync(p => p.DebtorId == id && p.LiquidClient == _currentUser.ClientShortcode);
+            if (!owned) return null;
+        }
+
         var d = await _context.Debtors.FindAsync(id);
-        return d is null ? null : new DebtorDto(d.Id, d.Name, d.CadenceName, d.Group, d.Active, d.Dnc, d.Contact, d.Email, d.Phone, d.Address, d.City, d.Province, d.PostalCode, d.Notes, d.Language, d.PreferredContactMethod);
+        return d is null ? null : ToDto(d);
     }
 
     public async Task<DebtorDto> CreateAsync(CreateDebtorDto dto)
@@ -62,6 +82,6 @@ public class DebtorService : IDebtorService
         _context.Debtors.Add(debtor);
         await _context.SaveChangesAsync();
 
-        return new DebtorDto(debtor.Id, debtor.Name, debtor.CadenceName, debtor.Group, debtor.Active, debtor.Dnc, debtor.Contact, debtor.Email, debtor.Phone, debtor.Address, debtor.City, debtor.Province, debtor.PostalCode, debtor.Notes, debtor.Language, debtor.PreferredContactMethod);
+        return ToDto(debtor);
     }
 }

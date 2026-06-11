@@ -37,6 +37,7 @@ public class ClientsController : ControllerBase
     }
 
     [HttpPost]
+    [Authorize(Policy = "StaffOnly")]
     public async Task<ActionResult<ClientDto>> PostClient(CreateClientDto dto)
     {
         var created = await _service.CreateAsync(dto);
@@ -44,6 +45,7 @@ public class ClientsController : ControllerBase
     }
 
     [HttpPut("{shortcode}")]
+    [Authorize(Policy = "StaffOnly")]
     public async Task<IActionResult> PutClient(string shortcode, UpdateClientDto dto)
     {
         var updated = await _service.UpdateAsync(shortcode, dto);

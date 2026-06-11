@@ -8,6 +8,7 @@ interface AuthContextType {
   isLoading: boolean;
   signOut: () => Promise<void>;
   role: string | null;
+  clientShortcode: string | null;
   mustChangePassword: boolean;
 }
 
@@ -17,6 +18,7 @@ const AuthContext = createContext<AuthContextType>({
   isLoading: true,
   signOut: async () => {},
   role: null,
+  clientShortcode: null,
   mustChangePassword: false,
 });
 
@@ -46,10 +48,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const role = user?.app_metadata?.role ?? null;
+  const clientShortcode = user?.app_metadata?.client_shortcode ?? null;
   const mustChangePassword = user?.app_metadata?.must_change_password === true;
 
   return (
-    <AuthContext.Provider value={{ session, user, isLoading, signOut, role, mustChangePassword }}>
+    <AuthContext.Provider value={{ session, user, isLoading, signOut, role, clientShortcode, mustChangePassword }}>
       {children}
     </AuthContext.Provider>
   );

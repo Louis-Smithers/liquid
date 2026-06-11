@@ -30,6 +30,7 @@ public class InvoicesController : ControllerBase
     }
 
     [HttpPatch("{id}/status")]
+    [Authorize(Policy = "StaffOnly")]
     public async Task<IActionResult> PatchStatus(string id, UpdateInvoiceStatusDto dto)
     {
         var updated = await _service.UpdateStatusAsync(id, dto.Status);

@@ -8,10 +8,12 @@ namespace Smithers.API.Services;
 public class InvoiceService : IInvoiceService
 {
     private readonly AppDbContext _context;
+    private readonly ICurrentUserService _currentUser;
 
-    public InvoiceService(AppDbContext context)
+    public InvoiceService(AppDbContext context, ICurrentUserService currentUser)
     {
         _context = context;
+        _currentUser = currentUser;
     }
 
     private static InvoiceDto ToDto(Invoice p) => new(
@@ -40,6 +42,9 @@ public class InvoiceService : IInvoiceService
 
     public async Task<IEnumerable<InvoiceDto>> GetByClientAsync(string shortcode)
     {
+        if (_currentUser.IsClient && shortcode != _currentUser.ClientShortcode)
+            return Enumerable.Empty<InvoiceDto>();
+
         return await _context.Invoices
             .Include(p => p.Debtor)
             .Where(p => p.LiquidClient == shortcode)
@@ -50,9 +55,14 @@ public class InvoiceService : IInvoiceService
 
     public async Task<IEnumerable<InvoiceDto>> GetByDebtorAsync(Guid debtorId)
     {
-        return await _context.Invoices
+        var query = _context.Invoices
             .Include(p => p.Debtor)
-            .Where(p => p.DebtorId == debtorId)
+            .Where(p => p.DebtorId == debtorId);
+
+        if (_currentUser.IsClient)
+            query = query.Where(p => p.LiquidClient == _currentUser.ClientShortcode);
+
+        return await query
             .OrderByDescending(p => p.Date)
             .Select(p => ToDto(p))
             .ToListAsync();
@@ -65,7 +75,12 @@ public class InvoiceService : IInvoiceService
             .Include(p => p.Debtor)
             .FirstOrDefaultAsync(p => p.InvoiceId == invoiceId);
 
-        return p is null ? null : ToDto(p);
+        if (p is null) return null;
+
+        if (_currentUser.IsClient && p.LiquidClient != _currentUser.ClientShortcode)
+            return null;
+
+        return ToDto(p);
     }
 
     public async Task<bool> UpdateStatusAsync(string invoiceId, string status)
@@ -84,11 +99,15 @@ public class InvoiceService : IInvoiceService
         var includedStatuses = new[] { "Pre-Verified", "Unverified", "OA", "ON" };
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
 
-        var invoices = await _context.Invoices
+        var query = _context.Invoices
             .Include(p => p.Client)
             .Include(p => p.Debtor)
-            .Where(p => includedStatuses.Contains(p.Status) && !p.Archived)
-            .ToListAsync();
+            .Where(p => includedStatuses.Contains(p.Status) && !p.Archived);
+
+        if (_currentUser.IsClient)
+            query = query.Where(p => p.LiquidClient == _currentUser.ClientShortcode);
+
+        var invoices = await query.ToListAsync();
 
         return invoices
             .GroupBy(p => p.Client.Shortcode)

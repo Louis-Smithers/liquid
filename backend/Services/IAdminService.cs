@@ -17,7 +17,7 @@ public interface IAdminService
 {
     Task<UserAccessRequest> SubmitAccessRequestAsync(SubmitRequestDto dto);
     Task<IEnumerable<UserAccessRequest>> GetAccessRequestsAsync();
-    Task<bool> ApproveRequestAsync(Guid requestId, string tempPassword);
+    Task<bool> ApproveRequestAsync(Guid requestId, string tempPassword, string role, string? clientShortcode);
     Task<bool> DenyRequestAsync(Guid requestId);
     Task<bool> ResetPasswordAsync(string supabaseUserId, string tempPassword);
     Task<bool> ClearMustChangePasswordAsync(string supabaseUserId);

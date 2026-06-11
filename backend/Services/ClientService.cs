@@ -7,19 +7,26 @@ namespace Smithers.API.Services;
 public class ClientService : IClientService
 {
     private readonly AppDbContext _context;
+    private readonly ICurrentUserService _currentUser;
 
-    public ClientService(AppDbContext context)
+    public ClientService(AppDbContext context, ICurrentUserService currentUser)
     {
         _context = context;
+        _currentUser = currentUser;
     }
 
     public async Task<IEnumerable<ClientDto>> GetAllAsync()
     {
-        return await _context.Clients
+        var query = _context.Clients.AsQueryable();
+
+        if (_currentUser.IsClient)
+            query = query.Where(c => c.Shortcode == _currentUser.ClientShortcode);
+
+        return await query
             .Select(c => new ClientDto(
-                c.Shortcode, 
-                c.CadenceName, 
-                c.Active, 
+                c.Shortcode,
+                c.CadenceName,
+                c.Active,
                 c.Dnc,
                 c.Email, c.Phone, c.Notes, c.City, c.Province, c.PostalCode, c.Language,
                 c.ReserveRate, c.DiscountRate, c.Address, c.Contact))
@@ -28,11 +35,14 @@ public class ClientService : IClientService
 
     public async Task<ClientDto?> GetByShortcodeAsync(string shortcode)
     {
+        if (_currentUser.IsClient && shortcode != _currentUser.ClientShortcode)
+            return null;
+
         var c = await _context.Clients.SingleOrDefaultAsync(c => c.Shortcode == shortcode);
         return c is null ? null : new ClientDto(
-            c.Shortcode, 
-            c.CadenceName, 
-            c.Active, 
+            c.Shortcode,
+            c.CadenceName,
+            c.Active,
             c.Dnc,
             c.Email, c.Phone, c.Notes, c.City, c.Province, c.PostalCode, c.Language,
             c.ReserveRate, c.DiscountRate, c.Address, c.Contact);
@@ -64,9 +74,9 @@ public class ClientService : IClientService
         await _context.SaveChangesAsync();
 
         return new ClientDto(
-            client.Shortcode, 
-            client.CadenceName, 
-            client.Active, 
+            client.Shortcode,
+            client.CadenceName,
+            client.Active,
             client.Dnc,
             client.Email, client.Phone, client.Notes, client.City, client.Province, client.PostalCode, client.Language,
             client.ReserveRate, client.DiscountRate, client.Address, client.Contact);
@@ -100,8 +110,13 @@ public class ClientService : IClientService
     {
         var includedStatuses = new[] { "Pre-Verified", "Unverified", "OA", "ON" };
 
-        var groups = await _context.Invoices
-            .Where(p => includedStatuses.Contains(p.Status) && !p.Archived)
+        var query = _context.Invoices
+            .Where(p => includedStatuses.Contains(p.Status) && !p.Archived);
+
+        if (_currentUser.IsClient)
+            query = query.Where(p => p.LiquidClient == _currentUser.ClientShortcode);
+
+        var groups = await query
             .GroupBy(p => p.LiquidClient)
             .Select(g => new
             {
@@ -119,6 +134,9 @@ public class ClientService : IClientService
 
     public async Task<ClientSummaryDto?> GetSummaryAsync(string shortcode)
     {
+        if (_currentUser.IsClient && shortcode != _currentUser.ClientShortcode)
+            return null;
+
         var client = await _context.Clients.FirstOrDefaultAsync(c => c.Shortcode == shortcode);
         if (client is null) return null;
 

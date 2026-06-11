@@ -39,8 +39,11 @@ public class UsersController : ControllerBase
     public async Task<IActionResult> ApproveRequest(Guid id, [FromBody] ApproveRequestDto dto)
     {
         if (!IsAdmin()) return Forbid();
-        var result = await _adminService.ApproveRequestAsync(id, dto.TempPassword);
-        if (!result) return BadRequest("Could not approve request.");
+        var role = dto.Role ?? "user";
+        if (role != "user" && role != "client")
+            return BadRequest("Role must be 'user' or 'client'.");
+        var result = await _adminService.ApproveRequestAsync(id, dto.TempPassword, role, dto.ClientShortcode);
+        if (!result) return BadRequest("Could not approve request. If role is 'client', a valid client shortcode is required.");
         return Ok(new { message = "Request approved." });
     }
 
@@ -110,6 +113,8 @@ public class UsersController : ControllerBase
 public class ApproveRequestDto
 {
     public required string TempPassword { get; set; }
+    public string? Role { get; set; }
+    public string? ClientShortcode { get; set; }
 }
 
 public class ResetPasswordDto

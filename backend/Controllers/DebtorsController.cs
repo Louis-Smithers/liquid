@@ -30,6 +30,7 @@ public class DebtorsController : ControllerBase
     }
 
     [HttpPost]
+    [Authorize(Policy = "StaffOnly")]
     public async Task<ActionResult<DebtorDto>> PostDebtor(CreateDebtorDto dto)
     {
         var created = await _service.CreateAsync(dto);

@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Smithers.API.Authorization;
 using Smithers.API.Data;
 using Smithers.API.HealthChecks;
 using Smithers.API.Services;
@@ -37,7 +39,10 @@ builder.Services.AddHttpClient<ISupabaseStorage, SupabaseStorageService>();
 builder.Services.AddScoped<IOcrPipelineService, OcrPipelineService>();
 builder.Services.AddHttpClient<IAdminService, AdminService>();
 builder.Services.AddScoped<IGcsService, GcsService>();
+builder.Services.AddHttpClient<IFeedbackService, FeedbackService>();
 builder.Services.AddHostedService<StagingCleanupService>();
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 
 // Health monitoring: periodic checks + Discord webhook alerts on state changes
 builder.Services.AddHttpClient<IAlertNotifier, DiscordNotifier>();
@@ -51,7 +56,11 @@ builder.Services.AddHostedService<HealthMonitorService>();
 builder.Services.AddAuthorizationBuilder()
     .SetFallbackPolicy(new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
         .RequireAuthenticatedUser()
-        .Build());
+        .Build())
+    .AddPolicy("StaffOnly", policy =>
+        policy.RequireAuthenticatedUser()
+              .AddRequirements(new StaffOnlyRequirement()));
+builder.Services.AddScoped<IAuthorizationHandler, StaffOnlyHandler>();
 
 // Configure CORS
 builder.Services.AddCors(options =>
