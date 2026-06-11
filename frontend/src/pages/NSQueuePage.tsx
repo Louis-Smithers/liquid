@@ -5,12 +5,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Lock, Unlock, Trash2, ArrowLeft, Plus, Save, ChevronDown, ChevronRight, FileText, FileX } from "lucide-react"
+import { Lock, Unlock, Trash2, ArrowLeft, Plus, Save, ChevronDown, ChevronRight, FileText, FileX, Upload } from "lucide-react"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
 import { useNSQueue } from '@/context/NSQueueContext'
 import type { Client } from '@/pages/ClientsPage'
+import { InvoiceUploadModal } from '@/components/ns-queue/InvoiceUploadModal'
 
 interface Invoice {
   invoiceId: string
@@ -45,6 +46,9 @@ export function NSQueuePage() {
   const [reservesToHoldBack, setReservesToHoldBack] = useState<number>(0)
   const [otherAdjustments, setOtherAdjustments] = useState<number>(0)
   const [notes, setNotes] = useState<string>('')
+  const [uploadModalOpen, setUploadModalOpen] = useState(false)
+  const [uploadModalClient, setUploadModalClient] = useState<string>('')
+  const [debtors, setDebtors] = useState<{ id: string; name: string }[]>([])
 
   const { refresh } = useNSQueue()
 
@@ -67,6 +71,21 @@ export function NSQueuePage() {
     } catch (err) {
       console.error(err)
     }
+  }
+
+  const fetchDebtors = async () => {
+    try {
+      const res = await api.get<{ id: string; name: string }[]>('/api/debtors')
+      setDebtors(res.data)
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const openUploadModal = (clientShortcode: string) => {
+    setUploadModalClient(clientShortcode)
+    setUploadModalOpen(true)
+    if (debtors.length === 0) fetchDebtors()
   }
 
   useEffect(() => {
@@ -246,6 +265,12 @@ export function NSQueuePage() {
             </div>
           </div>
           <div className="flex items-center space-x-4">
+            {builderClient && (
+              <Button variant="outline" onClick={() => openUploadModal(builderClient)}>
+                <Upload className="h-4 w-4 mr-2" />
+                Upload Invoices &amp; Add to Queue
+              </Button>
+            )}
             <Button variant="outline" onClick={() => setIsShared(!isShared)}>
               {isShared ? <Unlock className="h-4 w-4 mr-2" /> : <Lock className="h-4 w-4 mr-2" />}
               {isShared ? 'Shared' : 'Private'}
@@ -512,6 +537,16 @@ export function NSQueuePage() {
 
   // LIST VIEW
   return (
+    <>
+    <InvoiceUploadModal
+      open={uploadModalOpen}
+      onClose={() => setUploadModalOpen(false)}
+      clientShortcode={uploadModalClient}
+      onInvoicesAdded={async () => { await fetchQueues(); await refresh() }}
+      debtors={debtors}
+      clients={clients.length ? clients : undefined}
+      onClientsNeeded={fetchClients}
+    />
     <div className="flex flex-col w-full h-full min-h-[960px] bg-[#F7F9FB] p-8">
       <div className="flex flex-row justify-between items-center pb-6">
         <div className="flex flex-col gap-1">
@@ -538,8 +573,9 @@ export function NSQueuePage() {
               </button>
             ))}
           </div>
-          <Button variant="outline" onClick={() => window.location.href = '/ns-queue/upload'}>
-            Upload New Invoices
+          <Button variant="outline" onClick={() => openUploadModal('')}>
+            <Upload className="h-4 w-4 mr-2" />
+            Upload Invoices &amp; Add to Queue
           </Button>
           <Button onClick={() => setView('builder')} className="bg-[#4648D4] hover:bg-[#3537b3]">
             <Plus className="h-4 w-4 mr-2" />
@@ -648,5 +684,6 @@ export function NSQueuePage() {
         </Table>
       </div>
     </div>
+    </>
   )
 }
