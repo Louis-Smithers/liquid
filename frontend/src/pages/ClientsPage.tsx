@@ -205,7 +205,7 @@ export function ClientsPage() {
                   currentSortColumn={sortColumn}
                   currentSortDirection={sortDirection}
                   onSort={handleSort}
-                  className="h-10 pl-4 text-xs font-semibold text-[#464554] uppercase tracking-[0.6px] w-[395px]"
+                  className="h-10 pl-4 text-xs font-semibold text-[#464554] uppercase tracking-[0.6px]"
                 />
                 <SortableTableHead
                   label="VERIFIED %"
@@ -213,7 +213,7 @@ export function ClientsPage() {
                   currentSortColumn={sortColumn}
                   currentSortDirection={sortDirection}
                   onSort={handleSort}
-                  className="h-10 text-xs font-semibold text-[#464554] uppercase tracking-[0.6px] text-center w-[217px] pl-8"
+                  className="h-10 text-xs font-semibold text-[#464554] uppercase tracking-[0.6px] text-center w-[160px]"
                 />
                 <SortableTableHead
                   label="EMAIL"
@@ -221,9 +221,9 @@ export function ClientsPage() {
                   currentSortColumn={sortColumn}
                   currentSortDirection={sortDirection}
                   onSort={handleSort}
-                  className="h-10 text-xs font-semibold text-[#464554] uppercase tracking-[0.6px] text-right pr-4 w-[316px]"
+                  className="h-10 text-xs font-semibold text-[#464554] uppercase tracking-[0.6px] w-[280px]"
                 />
-                <TableHead className="h-10 text-xs font-semibold text-[#464554] uppercase tracking-[0.6px] text-right pr-4 w-[271px]">
+                <TableHead className="h-10 text-xs font-semibold text-[#464554] uppercase tracking-[0.6px] text-right pr-4 w-[140px]">
                   ACTIONS
                 </TableHead>
               </TableRow>
@@ -261,7 +261,7 @@ export function ClientsPage() {
                     </TableCell>
 
                     {/* Col 2: Verified % */}
-                    <TableCell className="text-center pl-8 py-3">
+                    <TableCell className="text-center py-3">
                       {(() => {
                         const pct = clientStats[client.shortcode]
                         if (pct == null) return <span className="text-xs text-muted-foreground">—</span>
@@ -278,7 +278,7 @@ export function ClientsPage() {
                     </TableCell>
 
                     {/* Col 3: Email */}
-                    <TableCell className="text-right pr-4 py-3">
+                    <TableCell className="py-3">
                       <span className="text-[13px] font-medium leading-5 text-[#191C1E]">
                         {client.email || '—'}
                       </span>

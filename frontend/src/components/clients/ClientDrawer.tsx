@@ -506,7 +506,7 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
                     <TabsTrigger value="details">Client Details</TabsTrigger>
                   </TabsList>
 
-                  <div className="flex-1 overflow-auto">
+                  <div className="overflow-auto">
                     {loading && <div className="text-center p-8 text-muted-foreground">Loading data...</div>}
 
                     {!loading && (
@@ -595,6 +595,13 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
                               </TableRow>
                             </TableHeader>
                             <TableBody>
+                              {sortedDebtors.length === 0 && (
+                                <TableRow>
+                                  <TableCell colSpan={9} className="text-center py-10 text-sm text-muted-foreground">
+                                    No debtors found for this client.
+                                  </TableCell>
+                                </TableRow>
+                              )}
                               {sortedDebtors.map(d => {
                                 const isExpanded = expandedDebtor === d.id
                                 const dInvs = debtorInvoices[d.id] || []
@@ -708,6 +715,13 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
+                                {sortedInvoices.length === 0 && (
+                                  <TableRow>
+                                    <TableCell colSpan={9} className="text-center py-10 text-sm text-muted-foreground">
+                                      {invoiceSearch ? 'No invoices match your search.' : 'No invoices found for this client.'}
+                                    </TableCell>
+                                  </TableRow>
+                                )}
                                 {sortedInvoices.map((inv) => {
                                   const isInQueue = activeQueue?.items.some(i => i.invoiceId === inv.invoiceId)
                                   return (
@@ -759,7 +773,7 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
                         </TabsContent>
 
                         {/* ── Client Details ── */}
-                        <TabsContent value="details">
+                        <TabsContent value="details" className="mt-0">
                           <Card>
                             <CardHeader className="text-lg font-semibold">Client Details</CardHeader>
                             <CardContent className="space-y-4">

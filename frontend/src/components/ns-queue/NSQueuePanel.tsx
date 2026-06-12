@@ -71,12 +71,6 @@ export function NSQueuePanel() {
       </div>
 
       <div className="p-4 border-t bg-muted/20">
-        <div className="flex justify-between items-center mb-4">
-          <span className="font-medium">Total</span>
-          <span className="font-bold text-lg">
-            ${(activeQueue?.totalAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </span>
-        </div>
         <Button asChild className="w-full">
           <Link to="/ns-queue">
             Open NS Queue &rarr;

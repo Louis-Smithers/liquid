@@ -43,6 +43,10 @@ invoices/
 RetoolUI/
 mcp.json
 
+# ── Loan table demo (sensitive client data) ───────────────────────────────
+loan_table_demo/
+node_modules/
+
 # ── Tests ─────────────────────────────────────────────────────────────────
 tests/
 # ── SQL setup scripts (reference project URLs / seed credentials) ─────────

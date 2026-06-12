@@ -20,6 +20,8 @@ public class AppDbContext : DbContext
     public DbSet<UserAccessRequest> UserAccessRequests => Set<UserAccessRequest>();
     public DbSet<UploadBatch> UploadBatches => Set<UploadBatch>();
     public DbSet<StagedDocument> StagedDocuments => Set<StagedDocument>();
+    public DbSet<Loan> Loans => Set<Loan>();
+    public DbSet<LoanPayment> LoanPayments => Set<LoanPayment>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -103,5 +105,12 @@ public class AppDbContext : DbContext
             .WithMany()
             .HasForeignKey(i => i.InvoiceId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        // LoanPayment -> Loan
+        modelBuilder.Entity<LoanPayment>()
+            .HasOne(p => p.Loan)
+            .WithMany(l => l.Payments)
+            .HasForeignKey(p => p.LoanId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }

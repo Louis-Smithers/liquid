@@ -5,10 +5,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Lock, Unlock, Trash2, ArrowLeft, Plus, Save, ChevronDown, ChevronRight, FileText, FileX, Upload } from "lucide-react"
+import { Lock, Unlock, Trash2, ArrowLeft, Plus, Save, ChevronDown, ChevronRight, FileText, FileX, Upload, Eye, Pencil } from "lucide-react"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useNSQueue } from '@/context/NSQueueContext'
 import type { Client } from '@/pages/ClientsPage'
 import { InvoiceUploadModal } from '@/components/ns-queue/InvoiceUploadModal'
@@ -49,6 +51,18 @@ export function NSQueuePage() {
   const [uploadModalOpen, setUploadModalOpen] = useState(false)
   const [uploadModalClient, setUploadModalClient] = useState<string>('')
   const [debtors, setDebtors] = useState<{ id: string; name: string }[]>([])
+
+  // Preview modal
+  const [previewSheet, setPreviewSheet] = useState<NotificationSheetDto | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+
+  // Add-invoice-to-draft modal
+  const [addInvoiceSheet, setAddInvoiceSheet] = useState<{ id: string; clientShortcode: string } | null>(null)
+  const [addInvoiceTab, setAddInvoiceTab] = useState<'existing' | 'upload'>('existing')
+  const [addInvoiceList, setAddInvoiceList] = useState<Invoice[]>([])
+  const [addInvoiceSelected, setAddInvoiceSelected] = useState<string[]>([])
+  const [addInvoiceLoading, setAddInvoiceLoading] = useState(false)
+  const [addInvoiceAdding, setAddInvoiceAdding] = useState(false)
 
   const { refresh } = useNSQueue()
 
@@ -243,6 +257,63 @@ export function NSQueuePage() {
 
   const toggleInvoice = (id: string) => {
     setSelectedInvoiceIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id])
+  }
+
+  const openPreview = async (q: NotificationSheetDto) => {
+    if (q.items && q.items.length > 0) {
+      setPreviewSheet(q)
+      return
+    }
+    setPreviewLoading(true)
+    try {
+      const res = await api.get<NotificationSheetDto>(`/api/notificationsheets/${q.id}`)
+      setPreviewSheet(res.data)
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setPreviewLoading(false)
+    }
+  }
+
+  const openAddInvoice = async (q: NotificationSheetDto) => {
+    setAddInvoiceSheet({ id: q.id, clientShortcode: q.clientShortcode })
+    setAddInvoiceSelected([])
+    setAddInvoiceTab('existing')
+    setAddInvoiceLoading(true)
+    try {
+      const res = await api.get<Invoice[]>(`/api/invoices/client/${q.clientShortcode}`)
+      const alreadyIn = new Set(q.items.map(i => i.invoiceId))
+      setAddInvoiceList(
+        res.data.filter(i => ['Pre-Verified', 'Unverified', 'OA'].includes(i.status) && !alreadyIn.has(i.invoiceId))
+      )
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setAddInvoiceLoading(false)
+    }
+  }
+
+  const handleAddInvoicesConfirm = async () => {
+    if (!addInvoiceSheet || addInvoiceSelected.length === 0) return
+    setAddInvoiceAdding(true)
+    try {
+      await Promise.all(
+        addInvoiceSelected.map(invId => {
+          const inv = addInvoiceList.find(i => i.invoiceId === invId)
+          return api.post(`/api/notificationsheets/${addInvoiceSheet.id}/items`, {
+            invoiceId: invId,
+            includedAmount: inv?.amount || 0,
+          })
+        })
+      )
+      await fetchQueues()
+      await refresh()
+      setAddInvoiceSheet(null)
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setAddInvoiceAdding(false)
+    }
   }
 
   const selectedInvoicesData = builderInvoices.filter(i => selectedInvoiceIds.includes(i.invoiceId))
@@ -547,6 +618,150 @@ export function NSQueuePage() {
       clients={clients.length ? clients : undefined}
       onClientsNeeded={fetchClients}
     />
+
+    {/* Preview Dialog */}
+    <Dialog open={!!previewSheet} onOpenChange={(o) => !o && setPreviewSheet(null)}>
+      <DialogContent className="sm:max-w-[700px] max-h-[80vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            {previewSheet?.displayName}
+            <Badge variant="outline" className={previewSheet?.status === 'Draft' ? 'bg-[#FEF9C3] text-[#A16207]' : 'bg-[#DCFCE7] text-[#15803D]'}>
+              {previewSheet?.status}
+            </Badge>
+          </DialogTitle>
+        </DialogHeader>
+        <div className="overflow-y-auto flex-1 space-y-4 pr-1">
+          {previewLoading ? (
+            <p className="text-sm text-muted-foreground text-center py-8">Loading...</p>
+          ) : !previewSheet || previewSheet.items.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-8">No items.</p>
+          ) : (
+            Array.from(new Set(previewSheet.items.map(i => i.debtorName))).map(debtor => (
+              <div key={debtor}>
+                <h4 className="font-semibold text-sm mb-2 text-muted-foreground">{debtor}</h4>
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-slate-50">
+                      <TableHead className="text-xs w-8"></TableHead>
+                      <TableHead className="text-xs">Invoice</TableHead>
+                      <TableHead className="text-xs">Date</TableHead>
+                      <TableHead className="text-xs text-right">Amount</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {previewSheet.items.filter(i => i.debtorName === debtor).map(i => (
+                      <TableRow key={i.id}>
+                        <TableCell className="w-8">
+                          {i.hasDocument
+                            ? <FileText className="h-4 w-4 text-green-600" />
+                            : <FileX className="h-4 w-4 text-red-400" />}
+                        </TableCell>
+                        <TableCell className="font-medium text-blue-600 text-sm">{i.invoiceNumber}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{new Date(i.date).toISOString().split('T')[0]}</TableCell>
+                        <TableCell className="text-right font-semibold text-sm">${i.includedAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            ))
+          )}
+        </div>
+        <div className="flex justify-between items-center pt-3 border-t text-sm font-semibold">
+          <span>Total</span>
+          <span>${(previewSheet?.totalAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+        </div>
+      </DialogContent>
+    </Dialog>
+
+    {/* Add Invoice to Draft Dialog */}
+    <Dialog open={!!addInvoiceSheet} onOpenChange={(o) => !o && setAddInvoiceSheet(null)}>
+      <DialogContent className="sm:max-w-[700px] max-h-[80vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle>Add Invoice to Draft</DialogTitle>
+        </DialogHeader>
+        <Tabs value={addInvoiceTab} onValueChange={(v) => setAddInvoiceTab(v as 'existing' | 'upload')} className="flex flex-col flex-1 min-h-0">
+          <TabsList className="grid grid-cols-2 w-full mb-3">
+            <TabsTrigger value="existing">Pick Existing Invoice</TabsTrigger>
+            <TabsTrigger value="upload">Upload New Invoice</TabsTrigger>
+          </TabsList>
+          <TabsContent value="existing" className="flex-1 overflow-y-auto min-h-0">
+            {addInvoiceLoading ? (
+              <p className="text-sm text-muted-foreground text-center py-8">Loading invoices...</p>
+            ) : addInvoiceList.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">No eligible invoices available for this client.</p>
+            ) : (
+              <>
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-slate-50">
+                      <TableHead className="w-10"></TableHead>
+                      <TableHead className="text-xs">Invoice</TableHead>
+                      <TableHead className="text-xs">Debtor</TableHead>
+                      <TableHead className="text-xs">Date</TableHead>
+                      <TableHead className="text-xs text-right">Amount</TableHead>
+                      <TableHead className="text-xs">Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {addInvoiceList.map(inv => (
+                      <TableRow key={inv.invoiceId}>
+                        <TableCell>
+                          <Checkbox
+                            checked={addInvoiceSelected.includes(inv.invoiceId)}
+                            onCheckedChange={() => setAddInvoiceSelected(prev =>
+                              prev.includes(inv.invoiceId) ? prev.filter(id => id !== inv.invoiceId) : [...prev, inv.invoiceId]
+                            )}
+                          />
+                        </TableCell>
+                        <TableCell className="font-medium text-blue-600 text-sm">{inv.originalInvoice}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{inv.debtorName || '—'}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{inv.date}</TableCell>
+                        <TableCell className="text-right font-semibold text-sm">${inv.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={`text-[10px] h-5 px-1.5 border-transparent font-semibold ${
+                            inv.status === 'Pre-Verified' ? 'bg-[#DCFCE7] text-[#15803D]' :
+                            inv.status === 'Unverified' ? 'bg-[#FEF9C3] text-[#A16207]' :
+                            'bg-blue-100 text-blue-800'
+                          }`}>{inv.status}</Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                <div className="flex justify-end pt-3 border-t mt-3">
+                  <Button
+                    onClick={handleAddInvoicesConfirm}
+                    disabled={addInvoiceAdding || addInvoiceSelected.length === 0}
+                    className="bg-[#4648D4] hover:bg-[#3537b3]"
+                  >
+                    {addInvoiceAdding ? 'Adding...' : `Add ${addInvoiceSelected.length > 0 ? `(${addInvoiceSelected.length})` : ''} to Draft`}
+                  </Button>
+                </div>
+              </>
+            )}
+          </TabsContent>
+          <TabsContent value="upload" className="flex flex-col items-center justify-center py-10 gap-4">
+            <p className="text-sm text-muted-foreground text-center">
+              Upload and scan a new invoice PDF to add it to this draft.
+            </p>
+            <Button
+              onClick={() => {
+                if (!addInvoiceSheet) return
+                setUploadModalClient(addInvoiceSheet.clientShortcode)
+                if (debtors.length === 0) fetchDebtors()
+                setAddInvoiceSheet(null)
+                setUploadModalOpen(true)
+              }}
+              className="bg-[#4648D4] hover:bg-[#3537b3]"
+            >
+              <Upload className="h-4 w-4 mr-2" />
+              Open Upload Scanner
+            </Button>
+          </TabsContent>
+        </Tabs>
+      </DialogContent>
+    </Dialog>
     <div className="flex flex-col w-full h-full min-h-[960px] bg-[#F7F9FB] p-8">
       <div className="flex flex-row justify-between items-center pb-6">
         <div className="flex flex-col gap-1">
@@ -626,25 +841,42 @@ export function NSQueuePage() {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
-                      <Button variant="outline" size="sm" onClick={() => { setDetailSheetId(q.id); setView('detail'); }}>Open</Button>
-                      {q.status === 'Draft' && (
+                      <Button variant="outline" size="sm" onClick={() => openPreview(q)}>
+                        <Eye className="h-3.5 w-3.5 mr-1" />
+                        Preview
+                      </Button>
+                      {q.status === 'Draft' ? (
                         <>
+                          <Button variant="outline" size="sm" onClick={() => { setDetailSheetId(q.id); setView('detail'); }}>
+                            <Pencil className="h-3.5 w-3.5 mr-1" />
+                            Edit
+                          </Button>
+                          <Button variant="outline" size="sm" onClick={() => openAddInvoice(q)}>
+                            <Plus className="h-3.5 w-3.5 mr-1" />
+                            Add Invoice
+                          </Button>
                           <Button variant="outline" size="sm" className="text-green-600 border-green-200 hover:bg-green-50" onClick={() => submitQueue(q.id)}>
                             Submit
                           </Button>
-                          <Button variant="ghost" size="icon" title="Delete Queue" className="text-red-500 hover:bg-red-50" onClick={() => deleteQueue(q.id)}>
+                          <Button variant="ghost" size="icon" title="Delete" className="text-red-500 hover:bg-red-50" onClick={() => deleteQueue(q.id)}>
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </>
-                      )}
-                      {(q.status === 'Submitted' || q.hasGcsFiles) && (
+                      ) : (
                         <>
-                          <Button variant="outline" size="sm" onClick={() => downloadIntake(q.id, q.clientShortcode)}>
-                            Intake
+                          <Button variant="outline" size="sm" onClick={() => { setDetailSheetId(q.id); setView('detail'); }}>
+                            Open
                           </Button>
-                          <Button variant="outline" size="sm" onClick={() => downloadPdf(q.id, q.clientShortcode)}>
-                            PDF
-                          </Button>
+                          {(q.status === 'Submitted' || q.hasGcsFiles) && (
+                            <>
+                              <Button variant="outline" size="sm" onClick={() => downloadIntake(q.id, q.clientShortcode)}>
+                                Intake
+                              </Button>
+                              <Button variant="outline" size="sm" onClick={() => downloadPdf(q.id, q.clientShortcode)}>
+                                PDF
+                              </Button>
+                            </>
+                          )}
                         </>
                       )}
                     </div>

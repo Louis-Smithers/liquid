@@ -19,6 +19,7 @@ export function TopNav() {
   const staffNavItems = [
     { name: 'Clients', path: '/clients' },
     { name: 'Debtors', path: '/debtors' },
+    { name: 'Loans', path: '/loans' },
     { name: 'Scan Invoice', path: '/scan' },
     { name: 'Import Queue', path: '/queue' },
     { name: 'Aging Report', path: '/aging' },

@@ -11,6 +11,7 @@ import { NSQueuePage } from './pages/NSQueuePage'
 import { NSQueueUploadPage } from './pages/NSQueueUploadPage'
 import { AdminPage } from './pages/AdminPage'
 import { InvoiceScanPage } from './pages/InvoiceScanPage'
+import { LoansPage } from './pages/LoansPage'
 
 // Pages — client portal
 import { ClientPortalPage } from './pages/portal/ClientPortalPage'
@@ -65,6 +66,7 @@ function App() {
               <Route path="/gate/:invoiceId" element={<TheGatePage />} />
               <Route path="/ns-queue" element={<NSQueuePage />} />
               <Route path="/ns-queue/upload" element={<NSQueueUploadPage />} />
+              <Route path="/loans" element={<LoansPage />} />
               <Route path="/admin" element={<AdminPage />} />
               <Route path="/scan" element={<InvoiceScanPage />} />
             </Route>
