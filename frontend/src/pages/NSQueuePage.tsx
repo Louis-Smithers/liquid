@@ -56,6 +56,16 @@ export function NSQueuePage() {
   const [previewSheet, setPreviewSheet] = useState<NotificationSheetDto | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
 
+  // Detail view editable financials
+  const [detailInitialFeePercent, setDetailInitialFeePercent] = useState<number>(0)
+  const [detailReserveFeePercent, setDetailReserveFeePercent] = useState<number>(0)
+  const [detailOtherFee, setDetailOtherFee] = useState<number>(0)
+  const [detailCashReservesToRelease, setDetailCashReservesToRelease] = useState<number>(0)
+  const [detailReservesToHoldBack, setDetailReservesToHoldBack] = useState<number>(0)
+  const [detailOtherAdjustments, setDetailOtherAdjustments] = useState<number>(0)
+  const [detailNotes, setDetailNotes] = useState<string>('')
+  const [isSavingDetail, setIsSavingDetail] = useState(false)
+
   // Add-invoice-to-draft modal
   const [addInvoiceSheet, setAddInvoiceSheet] = useState<{ id: string; clientShortcode: string } | null>(null)
   const [addInvoiceTab, setAddInvoiceTab] = useState<'existing' | 'upload'>('existing')
@@ -112,6 +122,13 @@ export function NSQueuePage() {
         try {
           const res = await api.get<NotificationSheetDto>(`/api/notificationsheets/${detailSheetId}`)
           setDetailSheet(res.data)
+          setDetailInitialFeePercent(Number(res.data.initialFeePercent) * 100)
+          setDetailReserveFeePercent(Number(res.data.reserveFeePercent) * 100)
+          setDetailOtherFee(Number(res.data.otherFee))
+          setDetailCashReservesToRelease(Number(res.data.cashReservesToRelease))
+          setDetailReservesToHoldBack(Number(res.data.reservesToHoldBack))
+          setDetailOtherAdjustments(Number(res.data.otherAdjustments))
+          setDetailNotes(res.data.notes ?? '')
         } catch (err) {
           console.error(err)
         }
@@ -202,12 +219,49 @@ export function NSQueuePage() {
       const url = window.URL.createObjectURL(new Blob([res.data]))
       const link = document.createElement('a')
       link.href = url
-      link.setAttribute('download', `InvoiceIntake_${shortcode}_${id}.pdf`)
+      link.setAttribute('download', `InvoiceBinder_${shortcode}_${id}.pdf`)
       document.body.appendChild(link)
       link.click()
       link.parentNode?.removeChild(link)
     } catch (err) {
-      alert("Failed to download intake document.")
+      alert("Failed to download binder document.")
+    }
+  }
+
+  const removeItemFromDetail = async (itemId: string) => {
+    if (!detailSheet) return
+    try {
+      await api.delete(`/api/notificationsheets/${detailSheet.id}/items/${itemId}`)
+      const res = await api.get<NotificationSheetDto>(`/api/notificationsheets/${detailSheet.id}`)
+      setDetailSheet(res.data)
+      await refresh()
+    } catch (err) {
+      console.error(err)
+      alert("Failed to remove invoice.")
+    }
+  }
+
+  const saveDetailFinancials = async () => {
+    if (!detailSheet) return
+    setIsSavingDetail(true)
+    try {
+      await api.patch(`/api/notificationsheets/${detailSheet.id}`, {
+        initialFeePercent: detailInitialFeePercent / 100,
+        reserveFeePercent: detailReserveFeePercent / 100,
+        otherFee: detailOtherFee,
+        cashReservesToRelease: detailCashReservesToRelease,
+        reservesToHoldBack: detailReservesToHoldBack,
+        otherAdjustments: detailOtherAdjustments,
+        notes: detailNotes,
+      })
+      const res = await api.get<NotificationSheetDto>(`/api/notificationsheets/${detailSheet.id}`)
+      setDetailSheet(res.data)
+      await refresh()
+    } catch (err) {
+      console.error(err)
+      alert("Failed to save financials.")
+    } finally {
+      setIsSavingDetail(false)
     }
   }
 
@@ -306,7 +360,12 @@ export function NSQueuePage() {
           })
         })
       )
-      await fetchQueues()
+      if (view === 'detail' && detailSheetId === addInvoiceSheet.id) {
+        const res = await api.get<NotificationSheetDto>(`/api/notificationsheets/${addInvoiceSheet.id}`)
+        setDetailSheet(res.data)
+      } else {
+        await fetchQueues()
+      }
       await refresh()
       setAddInvoiceSheet(null)
     } catch (err) {
@@ -503,6 +562,13 @@ export function NSQueuePage() {
   }
 
   if (view === 'detail' && detailSheet) {
+    const isDraft = detailSheet.status === 'Draft'
+    const detailTotalAmount = detailSheet.items.reduce((acc, i) => acc + i.includedAmount, 0)
+    const detailInitialFeeAmt = detailTotalAmount * (detailInitialFeePercent / 100)
+    const detailReserveFeeAmt = detailTotalAmount * (detailReserveFeePercent / 100)
+    const detailTotalFee = detailInitialFeeAmt + detailReserveFeeAmt + detailOtherFee
+    const detailAdvanceAmount = detailTotalAmount - detailTotalFee - detailReservesToHoldBack + detailCashReservesToRelease + detailOtherAdjustments
+
     return (
       <div className="flex flex-col h-full bg-[#F7F9FB] overflow-hidden">
         <div className="flex items-center justify-between p-6 border-b bg-white shrink-0">
@@ -512,22 +578,32 @@ export function NSQueuePage() {
               <h1 className="text-2xl font-semibold tracking-tight">{detailSheet.displayName}</h1>
               <div className="flex items-center space-x-2 mt-1">
                 <Badge variant="secondary">{detailSheet.clientShortcode}</Badge>
-                <Badge variant="outline" className={detailSheet.status === 'Draft' ? 'bg-[#FEF9C3] text-[#A16207]' : 'bg-[#DCFCE7] text-[#15803D]'}>
+                <Badge variant="outline" className={isDraft ? 'bg-[#FEF9C3] text-[#A16207]' : 'bg-[#DCFCE7] text-[#15803D]'}>
                   {detailSheet.status}
                 </Badge>
               </div>
             </div>
           </div>
           <div className="flex items-center space-x-4">
-            {detailSheet.status === 'Draft' && (
-              <Button onClick={() => submitQueue(detailSheet.id)} className="bg-green-600 hover:bg-green-700">
-                <Save className="h-4 w-4 mr-2" />
-                Submit
-              </Button>
+            {isDraft && (
+              <>
+                <Button variant="outline" onClick={() => openAddInvoice(detailSheet)}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Invoice
+                </Button>
+                <Button variant="outline" onClick={() => openUploadModal(detailSheet.clientShortcode)}>
+                  <Upload className="h-4 w-4 mr-2" />
+                  Upload Invoice
+                </Button>
+                <Button onClick={() => submitQueue(detailSheet.id)} className="bg-green-600 hover:bg-green-700">
+                  <Save className="h-4 w-4 mr-2" />
+                  Submit
+                </Button>
+              </>
             )}
             {(detailSheet.status === 'Submitted' || detailSheet.hasGcsFiles) && (
               <Button variant="outline" onClick={() => downloadIntake(detailSheet.id, detailSheet.clientShortcode)}>
-                Download Intake
+                Download Binder
               </Button>
             )}
             {detailSheet.status === 'Submitted' && (
@@ -545,6 +621,9 @@ export function NSQueuePage() {
                 <h3 className="font-semibold text-sm">Invoices</h3>
               </div>
               <div className="p-4 space-y-6 overflow-y-auto">
+                {detailSheet.items.length === 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-8">No invoices on this sheet.</p>
+                )}
                 {Array.from(new Set(detailSheet.items.map(i => i.debtorName))).map(debtor => (
                   <div key={debtor}>
                     <h4 className="font-semibold text-sm mb-2 text-muted-foreground">{debtor}</h4>
@@ -558,6 +637,13 @@ export function NSQueuePage() {
                             <TableCell className="font-medium text-blue-600">{i.invoiceNumber}</TableCell>
                             <TableCell className="text-muted-foreground text-xs">{new Date(i.date).toISOString().split('T')[0]}</TableCell>
                             <TableCell className="text-right font-semibold">${i.includedAmount.toLocaleString(undefined, {minimumFractionDigits:2})}</TableCell>
+                            {isDraft && (
+                              <TableCell className="w-10 text-right">
+                                <Button variant="ghost" size="icon" className="text-red-500 hover:bg-red-50 h-7 w-7" onClick={() => removeItemFromDetail(i.id)}>
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </TableCell>
+                            )}
                           </TableRow>
                         ))}
                       </TableBody>
@@ -567,39 +653,114 @@ export function NSQueuePage() {
               </div>
             </div>
           </div>
-          
+
           <div className="w-80 bg-white border-l shadow-sm flex flex-col shrink-0 overflow-y-auto">
             <div className="p-4 border-b bg-slate-50">
               <h3 className="font-semibold text-sm uppercase text-muted-foreground tracking-wider">Financials</h3>
             </div>
-            <div className="p-6 space-y-4 text-sm">
-              <div className="flex justify-between font-semibold">
-                <span>Total Amount</span>
-                <span>${detailSheet.totalAmount.toLocaleString(undefined, {minimumFractionDigits:2})}</span>
+            {isDraft ? (
+              <div className="p-6 space-y-6">
+                <div className="flex justify-between items-center text-sm">
+                  <span className="font-semibold">Total Amount</span>
+                  <span className="font-bold text-lg">${detailTotalAmount.toLocaleString(undefined, {minimumFractionDigits:2})}</span>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs w-32">Initial Fee %</Label>
+                    <div className="flex items-center space-x-2">
+                      <Input type="number" className="h-8 w-20 text-right" value={detailInitialFeePercent} onChange={e => setDetailInitialFeePercent(parseFloat(e.target.value) || 0)} />
+                      <span className="text-sm font-medium w-16 text-right">${detailInitialFeeAmt.toLocaleString(undefined, {maximumFractionDigits:0})}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs w-32">Reserve Fee %</Label>
+                    <div className="flex items-center space-x-2">
+                      <Input type="number" className="h-8 w-20 text-right" value={detailReserveFeePercent} onChange={e => setDetailReserveFeePercent(parseFloat(e.target.value) || 0)} />
+                      <span className="text-sm font-medium w-16 text-right">${detailReserveFeeAmt.toLocaleString(undefined, {maximumFractionDigits:0})}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs w-32">Other Fee ($)</Label>
+                    <div className="flex items-center space-x-2">
+                      <Input type="number" className="h-8 w-20 text-right" value={detailOtherFee} onChange={e => setDetailOtherFee(parseFloat(e.target.value) || 0)} />
+                      <span className="text-sm font-medium w-16 text-right">${detailOtherFee.toLocaleString(undefined, {maximumFractionDigits:0})}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t flex justify-between items-center">
+                  <span className="font-bold">Total Fee</span>
+                  <span className="font-bold text-red-600">-${detailTotalFee.toLocaleString(undefined, {minimumFractionDigits:2})}</span>
+                </div>
+
+                <div className="space-y-4 pt-4 border-t">
+                  <div className="space-y-2">
+                    <Label className="text-xs">Reserves to Hold Back ($)</Label>
+                    <Input type="number" className="h-8 text-right" value={detailReservesToHoldBack} onChange={e => setDetailReservesToHoldBack(parseFloat(e.target.value) || 0)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs">Cash Reserves to Release ($)</Label>
+                    <Input type="number" className="h-8 text-right" value={detailCashReservesToRelease} onChange={e => setDetailCashReservesToRelease(parseFloat(e.target.value) || 0)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs">Other Adjustments ($)</Label>
+                    <Input type="number" className="h-8 text-right" value={detailOtherAdjustments} onChange={e => setDetailOtherAdjustments(parseFloat(e.target.value) || 0)} />
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t">
+                  <div className="p-4 bg-[#EEF2FF] rounded-lg border border-[#C7D2FE]">
+                    <div className="text-xs font-semibold text-[#4648D4] uppercase tracking-wider mb-1">Advance Amount</div>
+                    <div className="text-2xl font-bold text-[#191C1E]">${detailAdvanceAmount.toLocaleString(undefined, {minimumFractionDigits:2})}</div>
+                  </div>
+                </div>
+
+                <div className="space-y-2 pt-4">
+                  <Label className="text-xs">Notes</Label>
+                  <textarea
+                    className="flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    placeholder="Internal notes..."
+                    value={detailNotes}
+                    onChange={e => setDetailNotes(e.target.value)}
+                  />
+                </div>
+
+                <Button className="w-full" onClick={saveDetailFinancials} disabled={isSavingDetail}>
+                  <Save className="h-4 w-4 mr-2" />
+                  {isSavingDetail ? 'Saving...' : 'Save Financials'}
+                </Button>
               </div>
-              <div className="flex justify-between text-muted-foreground">
-                <span>Total Fee</span>
-                <span>-${detailSheet.totalFee.toLocaleString(undefined, {minimumFractionDigits:2})}</span>
-              </div>
-              <div className="flex justify-between text-muted-foreground">
-                <span>Reserves Held</span>
-                <span>-${detailSheet.reservesToHoldBack.toLocaleString(undefined, {minimumFractionDigits:2})}</span>
-              </div>
-              <div className="flex justify-between text-muted-foreground">
-                <span>Reserves Released</span>
-                <span>+${detailSheet.cashReservesToRelease.toLocaleString(undefined, {minimumFractionDigits:2})}</span>
-              </div>
-              <div className="flex justify-between text-muted-foreground">
-                <span>Other Adjustments</span>
-                <span>{detailSheet.otherAdjustments >= 0 ? '+' : ''}${detailSheet.otherAdjustments.toLocaleString(undefined, {minimumFractionDigits:2})}</span>
-              </div>
-              <div className="pt-4 border-t">
-                <div className="p-4 bg-[#EEF2FF] rounded-lg border border-[#C7D2FE]">
-                  <div className="text-xs font-semibold text-[#4648D4] uppercase tracking-wider mb-1">Advance Amount</div>
-                  <div className="text-2xl font-bold text-[#191C1E]">${detailSheet.advanceAmount.toLocaleString(undefined, {minimumFractionDigits:2})}</div>
+            ) : (
+              <div className="p-6 space-y-4 text-sm">
+                <div className="flex justify-between font-semibold">
+                  <span>Total Amount</span>
+                  <span>${detailSheet.totalAmount.toLocaleString(undefined, {minimumFractionDigits:2})}</span>
+                </div>
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Total Fee</span>
+                  <span>-${detailSheet.totalFee.toLocaleString(undefined, {minimumFractionDigits:2})}</span>
+                </div>
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Reserves Held</span>
+                  <span>-${detailSheet.reservesToHoldBack.toLocaleString(undefined, {minimumFractionDigits:2})}</span>
+                </div>
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Reserves Released</span>
+                  <span>+${detailSheet.cashReservesToRelease.toLocaleString(undefined, {minimumFractionDigits:2})}</span>
+                </div>
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Other Adjustments</span>
+                  <span>{detailSheet.otherAdjustments >= 0 ? '+' : ''}${detailSheet.otherAdjustments.toLocaleString(undefined, {minimumFractionDigits:2})}</span>
+                </div>
+                <div className="pt-4 border-t">
+                  <div className="p-4 bg-[#EEF2FF] rounded-lg border border-[#C7D2FE]">
+                    <div className="text-xs font-semibold text-[#4648D4] uppercase tracking-wider mb-1">Advance Amount</div>
+                    <div className="text-2xl font-bold text-[#191C1E]">${detailSheet.advanceAmount.toLocaleString(undefined, {minimumFractionDigits:2})}</div>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       </div>
@@ -870,7 +1031,7 @@ export function NSQueuePage() {
                           {(q.status === 'Submitted' || q.hasGcsFiles) && (
                             <>
                               <Button variant="outline" size="sm" onClick={() => downloadIntake(q.id, q.clientShortcode)}>
-                                Intake
+                                Binder
                               </Button>
                               <Button variant="outline" size="sm" onClick={() => downloadPdf(q.id, q.clientShortcode)}>
                                 PDF

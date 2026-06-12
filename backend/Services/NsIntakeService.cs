@@ -28,7 +28,7 @@ public class NsIntakeService : INsIntakeService
     {
         var datePart = createdAt.ToLocalTime().ToString("MM-dd-yy");
         var folder = $"{shortcode}/{shortcode} {datePart}";
-        return ($"{folder}/NS-{shortId}.pdf", $"{folder}/Invoice intake-{shortId}.pdf");
+        return ($"{folder}/NS-{shortId}.pdf", $"{folder}/Invoice binder-{shortId}.pdf");
     }
 
     public async Task<SubmitNsResultDto> GenerateAndStoreAsync(Guid sheetId)

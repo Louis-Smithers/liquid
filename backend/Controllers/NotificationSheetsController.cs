@@ -171,9 +171,9 @@ public class NotificationSheetsController : ControllerBase
         }
 
         var bytes = await intakeService.GetOrGenerateAsync(id);
-        if (bytes == null) return NotFound("Intake document could not be generated or found.");
+        if (bytes == null) return NotFound("Binder document could not be generated or found.");
 
-        return File(bytes, "application/pdf", $"InvoiceIntake_{sheet.ClientShortcode}_{id}.pdf");
+        return File(bytes, "application/pdf", $"InvoiceBinder_{sheet.ClientShortcode}_{id}.pdf");
     }
 
     [HttpGet("{id:guid}/pdf/url")]

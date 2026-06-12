@@ -41,11 +41,15 @@ Thumbs.db
 # ── Invoice PDFs (real client documents — never commit) ───────────────────
 invoices/
 RetoolUI/
+Import list/
 mcp.json
 
 # ── Loan table demo (sensitive client data) ───────────────────────────────
 loan_table_demo/
 node_modules/
+
+# ── Import list / n8n workflow tooling (data migration, not app code) ──────
+Import list/
 
 # ── Tests ─────────────────────────────────────────────────────────────────
 tests/

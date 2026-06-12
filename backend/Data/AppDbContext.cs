@@ -76,6 +76,8 @@ public class AppDbContext : DbContext
         {
             entity.HasKey(q => q.Id);
             entity.Property(q => q.Id).ValueGeneratedOnAdd();
+            entity.Property(q => q.CreatedAt).HasDefaultValueSql("now()");
+            entity.Property(q => q.RunTimestamp).HasDefaultValueSql("now()");
             entity.ToTable("import_review_queue");
         });
 
