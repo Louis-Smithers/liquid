@@ -95,6 +95,76 @@ public class ImportQueueService : IImportQueueService
         return (true, null, created);
     }
 
+    public async Task<(bool Success, string? Error, ResolveGroupResultDto? Result)> ResolveGroupAsync(
+        ResolveGroupDto dto, Guid resolvedBy)
+    {
+        var client = await _context.Clients.FirstOrDefaultAsync(c => c.Shortcode == dto.Shortcode);
+        if (client is null) return (false, "Client not found.", null);
+
+        // Build debtor lookup from the provided mappings
+        var debtorIds = dto.DebtorMappings.Select(m => m.DebtorId).Distinct().ToList();
+        var debtors = await _context.Debtors
+            .Where(d => debtorIds.Contains(d.Id))
+            .ToDictionaryAsync(d => d.Id);
+
+        var mappingByRawName = dto.DebtorMappings
+            .ToDictionary(m => m.RawDebtorName.Trim().ToLower(), m => m);
+
+        var items = await _context.ImportReviewQueue
+            .Where(q => q.ClientName == dto.ClientName && q.ReviewStatus == "Pending")
+            .ToListAsync();
+
+        var now = DateTimeOffset.UtcNow;
+        int resolved = 0, skipped = 0;
+
+        foreach (var item in items)
+        {
+            var rawDebtor = (item.DebtorName ?? "").Trim().ToLower();
+            if (!mappingByRawName.TryGetValue(rawDebtor, out var mapping) ||
+                !debtors.TryGetValue(mapping.DebtorId, out var debtor))
+            {
+                skipped++;
+                continue;
+            }
+
+            var invoiceDate = DateOnly.FromDateTime(DateTime.UtcNow);
+            if (!string.IsNullOrEmpty(item.InvoiceDate) &&
+                DateOnly.TryParse(item.InvoiceDate, out var parsed))
+                invoiceDate = parsed;
+
+            // Deduplicate: skip if invoice already exists
+            var invoiceId = $"{dto.Shortcode}_{item.InvoiceNumber}";
+            if (await _context.Invoices.AnyAsync(i => i.InvoiceId == invoiceId))
+            {
+                item.ReviewStatus = "Resolved";
+                item.ResolvedBy = resolvedBy;
+                item.ResolvedAt = now;
+                resolved++;
+                continue;
+            }
+
+            _context.Invoices.Add(new Invoice
+            {
+                InvoiceId = invoiceId,
+                OriginalInvoice = item.InvoiceNumber ?? "UNKNOWN",
+                Date = invoiceDate,
+                DebtorId = debtor.Id,
+                DebtorName = debtor.Name,
+                LiquidClient = dto.Shortcode,
+                Amount = item.Amount ?? 0,
+                Status = "Pre-Verified"
+            });
+
+            item.ReviewStatus = "Resolved";
+            item.ResolvedBy = resolvedBy;
+            item.ResolvedAt = now;
+            resolved++;
+        }
+
+        await _context.SaveChangesAsync();
+        return (true, null, new ResolveGroupResultDto(resolved, skipped));
+    }
+
     public async Task<(bool Success, string? Error)> DismissAsync(
         long id, DismissQueueDto dto, Guid resolvedBy)
     {

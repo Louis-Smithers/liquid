@@ -34,6 +34,16 @@ public class ImportQueueController : ControllerBase
         return Ok(created);
     }
 
+    [HttpPost("resolve-group")]
+    public async Task<IActionResult> ResolveGroup(ResolveGroupDto dto)
+    {
+        var resolvedBy = GetUserId();
+        var (success, error, result) = await _service.ResolveGroupAsync(dto, resolvedBy);
+
+        if (!success) return BadRequest(error);
+        return Ok(result);
+    }
+
     [HttpPost("{id:long}/dismiss")]
     public async Task<IActionResult> Dismiss(long id, DismissQueueDto dto)
     {

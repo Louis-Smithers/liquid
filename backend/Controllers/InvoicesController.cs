@@ -14,6 +14,19 @@ public class InvoicesController : ControllerBase
 
     public InvoicesController(IInvoiceService service) => _service = service;
 
+    [HttpGet]
+    public async Task<ActionResult<InvoicePageDto>> GetPage(
+        [FromQuery] string? search = null,
+        [FromQuery] string? status = null,
+        [FromQuery] string? cursorTime = null,
+        [FromQuery] string? cursorId = null,
+        [FromQuery] int pageSize = 25)
+    {
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        DateTimeOffset? parsedCursor = DateTimeOffset.TryParse(cursorTime, out var ct) ? ct : null;
+        return Ok(await _service.GetPageAsync(search, status, parsedCursor, cursorId, pageSize));
+    }
+
     [HttpGet("client/{shortcode}")]
     public async Task<ActionResult<IEnumerable<InvoiceDto>>> GetByClient(string shortcode)
         => Ok(await _service.GetByClientAsync(shortcode));

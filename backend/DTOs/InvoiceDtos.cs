@@ -24,6 +24,12 @@ public record InvoiceDto(
     bool Verified = false
 );
 
+public record InvoicePageDto(
+    IEnumerable<InvoiceDto> Items,
+    string? NextCursorTime,      // ISO-8601 created_time of last item
+    string? NextCursorId         // invoice_id of last item
+);
+
 public record UpdateInvoiceStatusDto(string Status);
 
 public record AgingDebtorRowDto(

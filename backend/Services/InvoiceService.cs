@@ -40,6 +40,55 @@ public class InvoiceService : IInvoiceService
         p.Verified
     );
 
+    public async Task<InvoicePageDto> GetPageAsync(
+        string? search, string? status,
+        DateTimeOffset? cursorTime, string? cursorId,
+        int pageSize)
+    {
+        var query = _context.Invoices
+            .Include(p => p.Debtor)
+            .AsQueryable();
+
+        if (_currentUser.IsClient)
+            query = query.Where(p => p.LiquidClient == _currentUser.ClientShortcode);
+
+        if (!string.IsNullOrWhiteSpace(status))
+            query = query.Where(p => p.Status == status);
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var q = search.Trim().ToLower();
+            query = query.Where(p =>
+                p.OriginalInvoice.ToLower().Contains(q) ||
+                p.DebtorName.ToLower().Contains(q) ||
+                p.LiquidClient.ToLower().Contains(q));
+        }
+
+        // Cursor: items older than (cursorTime, cursorId)
+        if (cursorTime.HasValue && cursorId != null)
+            query = query.Where(p =>
+                p.CreatedTime < cursorTime.Value ||
+                (p.CreatedTime == cursorTime.Value && string.Compare(p.InvoiceId, cursorId) < 0));
+
+        var items = await query
+            .OrderByDescending(p => p.CreatedTime)
+            .ThenByDescending(p => p.InvoiceId)
+            .Take(pageSize + 1)
+            .Select(p => ToDto(p))
+            .ToListAsync();
+
+        string? nextCursorTime = null;
+        string? nextCursorId = null;
+        if (items.Count > pageSize)
+        {
+            items.RemoveAt(items.Count - 1);
+            nextCursorTime = items[^1].CreatedTime.ToString("O");
+            nextCursorId = items[^1].InvoiceId;
+        }
+
+        return new InvoicePageDto(items, nextCursorTime, nextCursorId);
+    }
+
     public async Task<IEnumerable<InvoiceDto>> GetByClientAsync(string shortcode)
     {
         if (_currentUser.IsClient && shortcode != _currentUser.ClientShortcode)

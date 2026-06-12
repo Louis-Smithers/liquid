@@ -27,6 +27,22 @@ public record ResolveQueueDto(
     Guid DebtorId
 );
 
+public record DebtorMappingDto(
+    string RawDebtorName,
+    Guid DebtorId
+);
+
+public record ResolveGroupDto(
+    string ClientName,       // raw client name from queue (used to find the items)
+    string Shortcode,        // real client shortcode to map to
+    IEnumerable<DebtorMappingDto> DebtorMappings
+);
+
+public record ResolveGroupResultDto(
+    int Resolved,
+    int Skipped            // items where the debtor name had no mapping provided
+);
+
 public record DismissQueueDto(
     string? Notes
 );
