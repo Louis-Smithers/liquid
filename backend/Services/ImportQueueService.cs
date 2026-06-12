@@ -21,13 +21,29 @@ public class ImportQueueService : IImportQueueService
         q.ReviewStatus, q.Notes, q.ResolvedAt, q.CreatedAt
     );
 
-    public async Task<IEnumerable<ImportQueueItemDto>> GetPendingAsync()
+    public async Task<ImportQueuePageDto> GetPendingAsync(long? cursor, int pageSize)
     {
-        return await _context.ImportReviewQueue
-            .Where(q => q.ReviewStatus == "Pending")
-            .OrderByDescending(q => q.CreatedAt)
+        var query = _context.ImportReviewQueue
+            .Where(q => q.ReviewStatus == "Pending");
+
+        // Cursor: fetch items with id < cursor (descending id order)
+        if (cursor.HasValue)
+            query = query.Where(q => q.Id < cursor.Value);
+
+        var items = await query
+            .OrderByDescending(q => q.Id)
+            .Take(pageSize + 1)
             .Select(q => ToDto(q))
             .ToListAsync();
+
+        long? nextCursor = null;
+        if (items.Count > pageSize)
+        {
+            items.RemoveAt(items.Count - 1);
+            nextCursor = items[^1].Id;
+        }
+
+        return new ImportQueuePageDto(items, nextCursor);
     }
 
     public async Task<(bool Success, string? Error, InvoiceDto? CreatedInvoice)> ResolveAsync(

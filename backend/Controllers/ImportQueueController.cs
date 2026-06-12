@@ -16,8 +16,13 @@ public class ImportQueueController : ControllerBase
     public ImportQueueController(IImportQueueService service) => _service = service;
 
     [HttpGet("pending")]
-    public async Task<ActionResult<IEnumerable<ImportQueueItemDto>>> GetPending()
-        => Ok(await _service.GetPendingAsync());
+    public async Task<ActionResult<ImportQueuePageDto>> GetPending(
+        [FromQuery] long? cursor = null,
+        [FromQuery] int pageSize = 25)
+    {
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        return Ok(await _service.GetPendingAsync(cursor, pageSize));
+    }
 
     [HttpPost("{id:long}/resolve")]
     public async Task<IActionResult> Resolve(long id, ResolveQueueDto dto)

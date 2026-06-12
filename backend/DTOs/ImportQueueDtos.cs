@@ -17,6 +17,11 @@ public record ImportQueueItemDto(
     DateTimeOffset? CreatedAt
 );
 
+public record ImportQueuePageDto(
+    IEnumerable<ImportQueueItemDto> Items,
+    long? NextCursor  // null means no more pages
+);
+
 public record ResolveQueueDto(
     string Shortcode,
     Guid DebtorId

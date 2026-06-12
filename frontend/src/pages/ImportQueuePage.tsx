@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState, useCallback } from "react"
 import {
   Table,
   TableBody,
@@ -28,28 +28,55 @@ interface ImportQueueItem {
   createdAt: string | null
 }
 
+interface PageResponse {
+  items: ImportQueueItem[]
+  nextCursor: number | null
+}
+
+const PAGE_SIZE = 25
+
 export function ImportQueuePage() {
   const [items, setItems] = useState<ImportQueueItem[]>([])
-  const [loading, setLoading] = useState(true)
+  const [nextCursor, setNextCursor] = useState<number | null | undefined>(undefined) // undefined = not yet loaded
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [actionLoading, setActionLoading] = useState<number | null>(null)
+  const sentinelRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    fetchQueue()
-  }, [])
-
-  async function fetchQueue() {
+  const fetchPage = useCallback(async (cursor: number | null | undefined) => {
+    // undefined means initial state, null means no more pages
+    if (cursor === null || loading) return
+    setLoading(true)
+    setError(null)
     try {
-      setLoading(true)
-      setError(null)
-      const res = await api.get<ImportQueueItem[]>('/api/importqueue/pending')
-      setItems(res.data)
+      const params: Record<string, string> = { pageSize: String(PAGE_SIZE) }
+      if (cursor !== undefined) params.cursor = String(cursor)
+      const res = await api.get<PageResponse>('/api/importqueue/pending', { params })
+      setItems(prev => cursor === undefined ? res.data.items : [...prev, ...res.data.items])
+      setNextCursor(res.data.nextCursor)
     } catch {
       setError('Failed to load review queue.')
     } finally {
       setLoading(false)
     }
-  }
+  }, [loading])
+
+  // Initial load
+  useEffect(() => {
+    fetchPage(undefined)
+  }, [])
+
+  // Infinite scroll — fire when sentinel enters viewport
+  useEffect(() => {
+    const sentinel = sentinelRef.current
+    if (!sentinel) return
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) fetchPage(nextCursor) },
+      { rootMargin: '200px' }
+    )
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [nextCursor, fetchPage])
 
   async function handleDismiss(id: number) {
     setActionLoading(id)
@@ -93,21 +120,7 @@ export function ImportQueuePage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {loading && (
-              <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center text-slate-500">
-                  Loading...
-                </TableCell>
-              </TableRow>
-            )}
-            {!loading && items.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center text-slate-500">
-                  No items in the review queue.
-                </TableCell>
-              </TableRow>
-            )}
-            {!loading && items.map((item) => (
+            {items.map((item) => (
               <TableRow key={item.id}>
                 <TableCell className="font-medium text-slate-800">{item.clientName ?? '—'}</TableCell>
                 <TableCell className="text-slate-800">{item.debtorName ?? '—'}</TableCell>
@@ -135,8 +148,21 @@ export function ImportQueuePage() {
                 </TableCell>
               </TableRow>
             ))}
+            {!loading && items.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={7} className="h-24 text-center text-slate-500">
+                  No items in the review queue.
+                </TableCell>
+              </TableRow>
+            )}
           </TableBody>
         </Table>
+
+        {/* Sentinel + loading indicator */}
+        <div ref={sentinelRef} className="py-4 text-center text-sm text-slate-400">
+          {loading && 'Loading...'}
+          {!loading && nextCursor === null && items.length > 0 && 'All items loaded.'}
+        </div>
       </div>
     </div>
   )
