@@ -66,7 +66,7 @@ export function TheGatePage() {
       const params: Record<string, string> = { pageSize: String(PAGE_SIZE) }
       if (debouncedSearch) params.search = debouncedSearch
       if (statusFilter) params.status = statusFilter
-      if (cursorTime !== undefined && cursorId !== undefined) {
+      if (cursorTime != null && cursorId != null) {
         params.cursorTime = cursorTime
         params.cursorId = cursorId
       }

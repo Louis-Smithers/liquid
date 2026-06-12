@@ -43,6 +43,7 @@ invoices/
 RetoolUI/
 Import list/
 mcp.json
+backend/sql/
 
 # ── Loan table demo (sensitive client data) ───────────────────────────────
 loan_table_demo/
