@@ -16,7 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Search, Plus, Check, ChevronDown, ChevronRight, FileText, Loader2 } from "lucide-react"
+import { Search, Plus, Check, ChevronDown, ChevronRight, FileText, Loader2, ShoppingCart } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { api } from "@/lib/api"
@@ -283,7 +283,7 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [loading, setLoading] = useState(false)
   const [selectedInvoices, setSelectedInvoices] = useState<string[]>([])
-  const { activeQueue, setActiveClient, addItem } = useNSQueue()
+  const { activeQueue, setActiveClient, addItem, isPanelOpen, togglePanel } = useNSQueue()
 
   // Sorting
   const [debtorSortCol, setDebtorSortCol] = useState<string | null>(null)
@@ -488,6 +488,16 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
                     <Button variant="outline" className="h-8 text-xs font-semibold"
                       onClick={() => setNewDebtorOpen(true)}>
                       New Debtor
+                    </Button>
+                    <Button variant="outline" className="h-8 text-xs font-semibold gap-1.5"
+                      onClick={togglePanel}>
+                      <ShoppingCart className="h-3.5 w-3.5" />
+                      Queue
+                      {activeQueue && activeQueue.items.length > 0 && (
+                        <span className="ml-0.5 flex items-center justify-center h-4 w-4 rounded-full bg-[#4648D4] text-white text-[10px] font-bold">
+                          {activeQueue.items.length}
+                        </span>
+                      )}
                     </Button>
                     <Button className="h-8 text-xs font-semibold bg-[#4648D4] hover:bg-[#3537b3]"
                       onClick={() => setAssignmentLetterOpen(true)}>

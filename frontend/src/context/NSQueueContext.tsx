@@ -61,8 +61,8 @@ export function NSQueueProvider({ children }: { children: ReactNode }) {
   const setActiveClient = useCallback((shortcode: string | null) => {
     setActiveClientShortcode(shortcode)
     activeClientRef.current = shortcode
-    if (shortcode) {
-      setIsPanelOpen(true)
+    if (!shortcode) {
+      setIsPanelOpen(false)
     }
   }, [])
 

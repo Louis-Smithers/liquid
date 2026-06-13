@@ -8,14 +8,11 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Input } from "@/components/ui/input"
-import { Search, SlidersHorizontal, Settings2, ShoppingCart } from "lucide-react"
+import { Search, SlidersHorizontal, Settings2, ChevronLeft, ChevronRight } from "lucide-react"
 import { api } from "@/lib/api"
 import { ClientDrawer } from "@/components/clients/ClientDrawer"
 import { AddClientModal } from "@/components/clients/AddClientModal"
 import { SortableTableHead } from "@/components/ui/SortableTableHead"
-import { useNSQueue } from "@/context/NSQueueContext"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 
 export interface Client {
   id: string
@@ -56,6 +53,9 @@ export function ClientsPage() {
 
   const [sortColumn, setSortColumn] = useState<string | null>(null)
   const [sortDirection, setSortDirection] = useState<SortDirection>(null)
+  const [page, setPage] = useState(0)
+
+  const PAGE_SIZE = 10
 
   useEffect(() => {
     const fetchClients = async () => {
@@ -91,6 +91,9 @@ export function ClientsPage() {
     return matchesSearch && matchesTab
   })
 
+  // Reset to first page whenever filter/sort/tab changes
+  useEffect(() => { setPage(0) }, [searchQuery, activeTab, sortColumn, sortDirection])
+
   const statColumns = new Set(['verifiedPercent', 'debtorCount', 'invoiceCount', 'totalAmount'])
 
   const sortedClients = [...filteredClients].sort((a, b) => {
@@ -115,7 +118,9 @@ export function ClientsPage() {
     return 0;
   });
 
-  const { draftCount, togglePanel } = useNSQueue()
+  const totalPages = Math.ceil(sortedClients.length / PAGE_SIZE)
+  const pagedClients = sortedClients.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+
 
   const activeCount = clients.filter(c => c.active).length
   const totalCount = clients.length
@@ -136,12 +141,6 @@ export function ClientsPage() {
 
         {/* Right: Tab toggle + Add Client */}
         <div className="flex flex-row items-center gap-3">
-          <Button variant="outline" size="sm" onClick={togglePanel} className="h-8">
-            <ShoppingCart className="h-4 w-4 mr-2" />
-            Queue 
-            {draftCount > 0 && <Badge variant="secondary" className="ml-2 h-5 w-5 rounded-full p-0 flex items-center justify-center text-xs">{draftCount}</Badge>}
-          </Button>
-          
           {/* Active / All toggle */}
           <div className="flex flex-row items-center p-1 bg-[#F7F9FB] border border-[#C7C4D7] rounded-[2px]">
             <button
@@ -261,7 +260,7 @@ export function ClientsPage() {
                   </TableCell>
                 </TableRow>
               ) : (
-                sortedClients.map((client) => (
+                pagedClients.map((client) => (
                   <TableRow
                     key={client.shortcode}
                     className="cursor-pointer hover:bg-[#F8FAFC] border-t border-[rgba(199,196,215,0.5)] transition-colors"
@@ -339,13 +338,30 @@ export function ClientsPage() {
           </Table>
         </div>
 
-        {/* ── Table Footer ── */}
+        {/* ── Table Footer / Pagination ── */}
         <div className="border-t-2 border-[#C7C4D7] bg-[#F7F9FB]">
-          <div className="flex flex-row items-center px-4 py-3.5">
-            <div className="w-[427px]">
-              <span className="text-xs font-semibold tracking-[0.6px] text-[#191C1E]">
-                {filteredClients.length} CLIENTS
+          <div className="flex flex-row items-center justify-between px-4 py-3.5">
+            <span className="text-xs font-semibold tracking-[0.6px] text-[#191C1E]">
+              {filteredClients.length} CLIENTS
+            </span>
+            <div className="flex flex-row items-center gap-3">
+              <span className="text-xs text-[#464554]">
+                Page {totalPages === 0 ? 0 : page + 1} of {totalPages}
               </span>
+              <button
+                onClick={() => setPage(p => p - 1)}
+                disabled={page === 0}
+                className="flex items-center justify-center w-7 h-7 rounded border border-[#C7C4D7] bg-white disabled:opacity-40 hover:bg-[#E6E8EA] transition-colors"
+              >
+                <ChevronLeft className="h-4 w-4 text-[#464554]" />
+              </button>
+              <button
+                onClick={() => setPage(p => p + 1)}
+                disabled={page >= totalPages - 1}
+                className="flex items-center justify-center w-7 h-7 rounded border border-[#C7C4D7] bg-white disabled:opacity-40 hover:bg-[#E6E8EA] transition-colors"
+              >
+                <ChevronRight className="h-4 w-4 text-[#464554]" />
+              </button>
             </div>
           </div>
         </div>
