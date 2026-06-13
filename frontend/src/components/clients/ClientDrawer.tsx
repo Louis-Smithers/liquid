@@ -283,7 +283,7 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [loading, setLoading] = useState(false)
   const [selectedInvoices, setSelectedInvoices] = useState<string[]>([])
-  const { activeQueue, setActiveClient, addItem, isPanelOpen, togglePanel } = useNSQueue()
+  const { activeQueue, setActiveClient, addItem, togglePanel } = useNSQueue()
 
   // Sorting
   const [debtorSortCol, setDebtorSortCol] = useState<string | null>(null)
