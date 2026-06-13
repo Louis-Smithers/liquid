@@ -41,11 +41,14 @@ type SortDirection = "asc" | "desc" | null;
 interface ClientStat {
   shortcode: string
   verifiedPercent: number
+  debtorCount: number
+  invoiceCount: number
+  totalAmount: number
 }
 
 export function ClientsPage() {
   const [clients, setClients] = useState<Client[]>([])
-  const [clientStats, setClientStats] = useState<Record<string, number>>({})
+  const [clientStats, setClientStats] = useState<Record<string, ClientStat>>({})
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedClient, setSelectedClient] = useState<Client | null>(null)
@@ -62,8 +65,8 @@ export function ClientsPage() {
           api.get<ClientStat[]>('/api/clients/stats')
         ])
         setClients(clientsRes.data)
-        const statsMap: Record<string, number> = {}
-        for (const s of statsRes.data) statsMap[s.shortcode] = s.verifiedPercent
+        const statsMap: Record<string, ClientStat> = {}
+        for (const s of statsRes.data) statsMap[s.shortcode] = s
         setClientStats(statsMap)
       } catch (error) {
         console.error("Failed to fetch clients:", error)
@@ -88,23 +91,23 @@ export function ClientsPage() {
     return matchesSearch && matchesTab
   })
 
+  const statColumns = new Set(['verifiedPercent', 'debtorCount', 'invoiceCount', 'totalAmount'])
+
   const sortedClients = [...filteredClients].sort((a, b) => {
     if (!sortColumn || !sortDirection) return 0;
-    
-    let aVal: any = a[sortColumn as keyof Client];
-    let bVal: any = b[sortColumn as keyof Client];
 
-    // Handle nulls/undefined
-    if (aVal == null) aVal = "";
-    if (bVal == null) bVal = "";
+    let aVal: any
+    let bVal: any
 
-    // Specific sorting rules
-    if (sortColumn === 'active') { // Verified % proxy in our UI for now is 'active' status indicator
-       aVal = a.active ? 1 : 0;
-       bVal = b.active ? 1 : 0;
-    } else if (typeof aVal === 'string') {
-       aVal = aVal.toLowerCase();
-       bVal = bVal.toLowerCase();
+    if (statColumns.has(sortColumn)) {
+      const aStat = clientStats[a.shortcode]
+      const bStat = clientStats[b.shortcode]
+      aVal = aStat ? aStat[sortColumn as keyof ClientStat] : -1
+      bVal = bStat ? bStat[sortColumn as keyof ClientStat] : -1
+    } else {
+      aVal = a[sortColumn as keyof Client] ?? ""
+      bVal = b[sortColumn as keyof Client] ?? ""
+      if (typeof aVal === 'string') { aVal = aVal.toLowerCase(); bVal = (bVal as string).toLowerCase() }
     }
 
     if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
@@ -209,19 +212,35 @@ export function ClientsPage() {
                 />
                 <SortableTableHead
                   label="VERIFIED %"
-                  columnKey="active"
+                  columnKey="verifiedPercent"
                   currentSortColumn={sortColumn}
                   currentSortDirection={sortDirection}
                   onSort={handleSort}
-                  className="h-10 text-xs font-semibold text-[#464554] uppercase tracking-[0.6px] text-center w-[160px]"
+                  className="h-10 text-xs font-semibold text-[#464554] uppercase tracking-[0.6px] text-center w-[140px]"
                 />
                 <SortableTableHead
-                  label="EMAIL"
-                  columnKey="email"
+                  label="DEBTORS"
+                  columnKey="debtorCount"
                   currentSortColumn={sortColumn}
                   currentSortDirection={sortDirection}
                   onSort={handleSort}
-                  className="h-10 text-xs font-semibold text-[#464554] uppercase tracking-[0.6px] w-[280px]"
+                  className="h-10 text-xs font-semibold text-[#464554] uppercase tracking-[0.6px] text-right w-[110px]"
+                />
+                <SortableTableHead
+                  label="INVOICES"
+                  columnKey="invoiceCount"
+                  currentSortColumn={sortColumn}
+                  currentSortDirection={sortDirection}
+                  onSort={handleSort}
+                  className="h-10 text-xs font-semibold text-[#464554] uppercase tracking-[0.6px] text-right w-[110px]"
+                />
+                <SortableTableHead
+                  label="TOTAL AMOUNT"
+                  columnKey="totalAmount"
+                  currentSortColumn={sortColumn}
+                  currentSortDirection={sortDirection}
+                  onSort={handleSort}
+                  className="h-10 text-xs font-semibold text-[#464554] uppercase tracking-[0.6px] text-right w-[160px]"
                 />
                 <TableHead className="h-10 text-xs font-semibold text-[#464554] uppercase tracking-[0.6px] text-right pr-4 w-[140px]">
                   ACTIONS
@@ -231,13 +250,13 @@ export function ClientsPage() {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center py-12 text-[#6B7280] text-sm">
+                  <TableCell colSpan={6} className="text-center py-12 text-[#6B7280] text-sm">
                     Loading clients...
                   </TableCell>
                 </TableRow>
               ) : sortedClients.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center py-12 text-[#6B7280] text-sm">
+                  <TableCell colSpan={6} className="text-center py-12 text-[#6B7280] text-sm">
                     No clients found
                   </TableCell>
                 </TableRow>
@@ -263,8 +282,9 @@ export function ClientsPage() {
                     {/* Col 2: Verified % */}
                     <TableCell className="text-center py-3">
                       {(() => {
-                        const pct = clientStats[client.shortcode]
-                        if (pct == null) return <span className="text-xs text-muted-foreground">—</span>
+                        const stat = clientStats[client.shortcode]
+                        if (stat == null) return <span className="text-xs text-muted-foreground">—</span>
+                        const pct = stat.verifiedPercent
                         const pctDisplay = (pct * 100).toFixed(1) + '%'
                         const color = pct >= 0.8 ? '#15803D' : pct >= 0.5 ? '#A16207' : '#B91C1C'
                         const bg = pct >= 0.8 ? '#DCFCE7' : pct >= 0.5 ? '#FEF9C3' : '#FEE2E2'
@@ -277,14 +297,30 @@ export function ClientsPage() {
                       })()}
                     </TableCell>
 
-                    {/* Col 3: Email */}
-                    <TableCell className="py-3">
+                    {/* Col 3: Debtors */}
+                    <TableCell className="text-right py-3">
                       <span className="text-[13px] font-medium leading-5 text-[#191C1E]">
-                        {client.email || '—'}
+                        {clientStats[client.shortcode]?.debtorCount ?? '—'}
                       </span>
                     </TableCell>
 
-                    {/* Col 4: View Details */}
+                    {/* Col 4: Invoices */}
+                    <TableCell className="text-right py-3">
+                      <span className="text-[13px] font-medium leading-5 text-[#191C1E]">
+                        {clientStats[client.shortcode]?.invoiceCount ?? '—'}
+                      </span>
+                    </TableCell>
+
+                    {/* Col 5: Total Amount */}
+                    <TableCell className="text-right py-3">
+                      <span className="text-[13px] font-medium leading-5 text-[#191C1E]">
+                        {clientStats[client.shortcode] != null
+                          ? '$' + clientStats[client.shortcode].totalAmount.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                          : '—'}
+                      </span>
+                    </TableCell>
+
+                    {/* Col 6: View Details */}
                     <TableCell className="text-right pr-4 py-3">
                       <button
                         className="text-xs font-semibold tracking-[0.6px] text-[#4648D4] hover:text-[#3537b3] transition-colors"

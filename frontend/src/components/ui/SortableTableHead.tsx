@@ -23,7 +23,7 @@ export function SortableTableHead({
   const isActive = currentSortColumn === columnKey;
 
   const handleClick = () => {
-    if (!isActive) {
+    if (!isActive || currentSortDirection === null) {
       onSort(columnKey, "asc");
     } else if (currentSortDirection === "asc") {
       onSort(columnKey, "desc");

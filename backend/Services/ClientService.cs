@@ -122,13 +122,18 @@ public class ClientService : IClientService
             {
                 Shortcode = g.Key,
                 Total = g.Count(),
-                Verified = g.Count(p => p.Verified)
+                Verified = g.Count(p => p.Verified),
+                DebtorCount = g.Select(p => p.DebtorId).Distinct().Count(),
+                TotalAmount = g.Sum(p => p.Amount)
             })
             .ToListAsync();
 
         return groups.Select(g => new ClientStatDto(
             g.Shortcode,
-            g.Total > 0 ? (decimal)g.Verified / g.Total : 0m
+            g.Total > 0 ? (decimal)g.Verified / g.Total : 0m,
+            g.DebtorCount,
+            g.Total,
+            g.TotalAmount
         ));
     }
 

@@ -53,7 +53,7 @@ public record CreateClientDto(
     string? Contact = null
 );
 
-public record ClientStatDto(string Shortcode, decimal VerifiedPercent);
+public record ClientStatDto(string Shortcode, decimal VerifiedPercent, int DebtorCount, int InvoiceCount, decimal TotalAmount);
 
 public record ClientSummaryAgingDto(
     decimal D30,
