@@ -130,7 +130,7 @@ export function AdminPage() {
   }
 
   return (
-    <div className="container mx-auto p-8">
+    <div className="flex flex-col w-full h-full min-h-[960px] bg-[#F7F9FB] p-8 pt-0">
       <h1 className="mb-6 text-3xl font-bold">Admin Panel</h1>
 
       <Tabs defaultValue="requests">

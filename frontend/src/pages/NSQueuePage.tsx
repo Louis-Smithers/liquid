@@ -923,7 +923,7 @@ export function NSQueuePage() {
         </Tabs>
       </DialogContent>
     </Dialog>
-    <div className="flex flex-col w-full h-full min-h-[960px] bg-[#F7F9FB] p-8">
+    <div className="flex flex-col w-full h-full min-h-[960px] bg-[#F7F9FB] p-8 pt-0">
       <div className="flex flex-row justify-between items-center pb-6">
         <div className="flex flex-col gap-1">
           <h1 className="text-[24px] font-semibold leading-8 tracking-[-0.24px] text-[#191C1E]">

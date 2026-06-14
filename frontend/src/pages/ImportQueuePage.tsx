@@ -451,7 +451,7 @@ export function ImportQueuePage() {
   const resolveGroupItems = resolveGroup ? (grouped.get(resolveGroup) ?? []) : []
 
   return (
-    <div className="flex flex-col gap-6 w-full min-h-screen bg-[#F7F9FB] p-8 pt-6">
+    <div className="flex flex-col gap-6 w-full h-full min-h-[960px] bg-[#F7F9FB] p-8 pt-0">
       <div>
         <h1 className="text-3xl font-bold tracking-tight mb-2">Import Review Queue</h1>
         <p className="text-muted-foreground">Resolve unmatched invoices from the n8n import.</p>

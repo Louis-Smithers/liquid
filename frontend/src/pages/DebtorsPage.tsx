@@ -84,7 +84,7 @@ export function DebtorsPage() {
   const { draftCount, togglePanel } = useNSQueue()
 
   return (
-    <div className="flex flex-col gap-6 w-full h-full min-h-[960px] bg-[#F7F9FB]">
+    <div className="flex flex-col gap-6 w-full h-full min-h-[960px] bg-[#F7F9FB] p-8 pt-0">
       <div className="flex flex-row justify-between items-center pb-6">
         <div className="flex flex-col gap-1">
           <h1 className="text-2xl font-semibold tracking-tight text-[#191C1E]">Debtors</h1>

@@ -84,7 +84,7 @@ export function NSQueueUploadPage() {
   }
 
   return (
-    <div className="flex flex-col w-full h-full min-h-[960px] bg-[#F7F9FB] p-8">
+    <div className="flex flex-col w-full h-full min-h-[960px] bg-[#F7F9FB] p-8 pt-0">
       <div className="flex items-center space-x-4 pb-6">
         <Button variant="ghost" size="icon" onClick={() => navigate('/ns-queue')}><ArrowLeft className="h-5 w-5" /></Button>
         <h1 className="text-2xl font-semibold">Upload Invoices</h1>

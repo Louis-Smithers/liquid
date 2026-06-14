@@ -32,7 +32,7 @@ export function ClientPortalDebtorsPage() {
   }, [clientShortcode, session])
 
   return (
-    <div className="flex flex-col gap-6 p-8">
+    <div className="flex flex-col gap-6 w-full h-full min-h-[960px] bg-[#F7F9FB] p-8 pt-0">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">My Debtors</h1>
         <p className="text-muted-foreground text-sm mt-1">{debtors.length} debtor{debtors.length !== 1 ? 's' : ''}</p>

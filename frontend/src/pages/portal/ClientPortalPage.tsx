@@ -51,7 +51,7 @@ export function ClientPortalPage() {
   if (!summary) return <div className="p-8 text-muted-foreground">No data found.</div>
 
   return (
-    <div className="flex flex-col gap-6 p-8">
+    <div className="flex flex-col gap-6 w-full h-full min-h-[960px] bg-[#F7F9FB] p-8 pt-0">
       <div>
         <h1 className="text-3xl font-bold tracking-tight mb-1">Portfolio Overview</h1>
         <p className="text-muted-foreground text-sm">Account: {clientShortcode}</p>

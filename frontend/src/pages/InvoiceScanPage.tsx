@@ -62,7 +62,7 @@ export function InvoiceScanPage() {
   };
 
   return (
-    <div className="container mx-auto max-w-3xl p-8">
+    <div className="flex flex-col w-full h-full min-h-[960px] bg-[#F7F9FB] p-8 pt-0 max-w-3xl mx-auto">
       <h1 className="mb-6 text-3xl font-bold">Scan Invoice</h1>
       
       {error && <div className="mb-6 rounded bg-destructive/15 p-4 text-destructive">{error}</div>}
