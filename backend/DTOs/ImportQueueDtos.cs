@@ -27,14 +27,21 @@ public record ResolveQueueDto(
     Guid DebtorId
 );
 
+public record NewClientDto(
+    string Shortcode,
+    string? CadenceName
+);
+
 public record DebtorMappingDto(
     string RawDebtorName,
-    Guid DebtorId
+    Guid? DebtorId,          // existing debtor; null when creating new
+    string? NewDebtorName    // when set (and DebtorId null), create a debtor with this name
 );
 
 public record ResolveGroupDto(
-    string ClientName,       // raw client name from queue (used to find the items)
-    string Shortcode,        // real client shortcode to map to
+    string ClientName,           // raw client name from queue (used to find the items)
+    string? Shortcode,           // existing client shortcode; null/empty when NewClient is set
+    NewClientDto? NewClient,     // when set, create the client first and map to it
     IEnumerable<DebtorMappingDto> DebtorMappings
 );
 

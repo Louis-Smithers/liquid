@@ -98,14 +98,68 @@ public class ImportQueueService : IImportQueueService
     public async Task<(bool Success, string? Error, ResolveGroupResultDto? Result)> ResolveGroupAsync(
         ResolveGroupDto dto, Guid resolvedBy)
     {
-        var client = await _context.Clients.FirstOrDefaultAsync(c => c.Shortcode == dto.Shortcode);
-        if (client is null) return (false, "Client not found.", null);
+        // Resolve the target client: either an existing shortcode or a new client to create.
+        string shortcode;
+        if (dto.NewClient is not null)
+        {
+            var newShortcode = dto.NewClient.Shortcode?.Trim();
+            if (string.IsNullOrEmpty(newShortcode))
+                return (false, "New client shortcode is required.", null);
 
-        // Build debtor lookup from the provided mappings
-        var debtorIds = dto.DebtorMappings.Select(m => m.DebtorId).Distinct().ToList();
+            if (await _context.Clients.AnyAsync(c => c.Shortcode == newShortcode))
+                return (false, $"A client with shortcode '{newShortcode}' already exists.", null);
+
+            _context.Clients.Add(new Smithers.API.Models.Client
+            {
+                Id = Guid.NewGuid(),
+                Shortcode = newShortcode,
+                CadenceName = dto.NewClient.CadenceName ?? "",
+                Active = true,
+                Dnc = false
+            });
+            shortcode = newShortcode;
+        }
+        else
+        {
+            if (string.IsNullOrEmpty(dto.Shortcode))
+                return (false, "Select a client or create a new one.", null);
+
+            var client = await _context.Clients.FirstOrDefaultAsync(c => c.Shortcode == dto.Shortcode);
+            if (client is null) return (false, "Client not found.", null);
+            shortcode = dto.Shortcode;
+        }
+
+        // Build debtor lookup from the existing-debtor mappings
+        var existingDebtorIds = dto.DebtorMappings
+            .Where(m => m.DebtorId.HasValue)
+            .Select(m => m.DebtorId!.Value)
+            .Distinct()
+            .ToList();
         var debtors = await _context.Debtors
-            .Where(d => debtorIds.Contains(d.Id))
+            .Where(d => existingDebtorIds.Contains(d.Id))
             .ToDictionaryAsync(d => d.Id);
+
+        // Create any new debtors requested (mapping has a NewDebtorName and no DebtorId),
+        // keyed by raw name so each mapping resolves to the debtor it asked for.
+        var newDebtorByRawName = new Dictionary<string, Smithers.API.Models.Debtor>();
+        foreach (var mapping in dto.DebtorMappings)
+        {
+            if (mapping.DebtorId.HasValue) continue;
+            var newName = mapping.NewDebtorName?.Trim();
+            if (string.IsNullOrEmpty(newName)) continue;
+
+            var debtor = new Smithers.API.Models.Debtor
+            {
+                Id = Guid.NewGuid(),
+                Name = newName,
+                CadenceName = newName,
+                Group = "Review",
+                Active = true,
+                Dnc = false
+            };
+            _context.Debtors.Add(debtor);
+            newDebtorByRawName[mapping.RawDebtorName.Trim().ToLower()] = debtor;
+        }
 
         var mappingByRawName = dto.DebtorMappings
             .ToDictionary(m => m.RawDebtorName.Trim().ToLower(), m => m);
@@ -120,8 +174,20 @@ public class ImportQueueService : IImportQueueService
         foreach (var item in items)
         {
             var rawDebtor = (item.DebtorName ?? "").Trim().ToLower();
-            if (!mappingByRawName.TryGetValue(rawDebtor, out var mapping) ||
-                !debtors.TryGetValue(mapping.DebtorId, out var debtor))
+            if (!mappingByRawName.TryGetValue(rawDebtor, out var mapping))
+            {
+                skipped++;
+                continue;
+            }
+
+            // Resolve the effective debtor: existing one, or a freshly-created one.
+            Smithers.API.Models.Debtor? debtor = null;
+            if (mapping.DebtorId.HasValue)
+                debtors.TryGetValue(mapping.DebtorId.Value, out debtor);
+            else
+                newDebtorByRawName.TryGetValue(rawDebtor, out debtor);
+
+            if (debtor is null)
             {
                 skipped++;
                 continue;
@@ -133,7 +199,7 @@ public class ImportQueueService : IImportQueueService
                 invoiceDate = parsed;
 
             // Deduplicate: skip if invoice already exists
-            var invoiceId = $"{dto.Shortcode}_{item.InvoiceNumber}";
+            var invoiceId = $"{shortcode}_{item.InvoiceNumber}";
             if (await _context.Invoices.AnyAsync(i => i.InvoiceId == invoiceId))
             {
                 item.ReviewStatus = "Resolved";
@@ -150,7 +216,7 @@ public class ImportQueueService : IImportQueueService
                 Date = invoiceDate,
                 DebtorId = debtor.Id,
                 DebtorName = debtor.Name,
-                LiquidClient = dto.Shortcode,
+                LiquidClient = shortcode,
                 Amount = item.Amount ?? 0,
                 Status = "Pre-Verified"
             });
