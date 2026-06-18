@@ -17,6 +17,7 @@ import { SortableTableHead } from "@/components/ui/SortableTableHead"
 export interface Client {
   id: string
   shortcode: string
+  code?: string
   cadenceName: string
   active: boolean
   dnc: boolean
@@ -49,13 +50,13 @@ export function ClientsPage() {
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedClient, setSelectedClient] = useState<Client | null>(null)
-  const [activeTab, setActiveTab] = useState<'active' | 'all'>('active')
+  const [activeTab, setActiveTab] = useState<'active' | 'inactive' | 'all'>('active')
 
   const [sortColumn, setSortColumn] = useState<string | null>(null)
   const [sortDirection, setSortDirection] = useState<SortDirection>(null)
   const [page, setPage] = useState(0)
 
-  const PAGE_SIZE = 10
+  const PAGE_SIZE = 12
 
   useEffect(() => {
     const fetchClients = async () => {
@@ -87,7 +88,7 @@ export function ClientsPage() {
       client.shortcode.toLowerCase().includes(searchQuery.toLowerCase()) ||
       client.cadenceName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (client.email || '').toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesTab = activeTab === 'all' || client.active
+    const matchesTab = activeTab === 'all' || (activeTab === 'active' ? client.active : !client.active)
     return matchesSearch && matchesTab
   })
 
@@ -123,10 +124,14 @@ export function ClientsPage() {
 
 
   const activeCount = clients.filter(c => c.active).length
+  const inactiveCount = clients.filter(c => !c.active).length
   const totalCount = clients.length
 
+  const displayName = (client: Client) =>
+    client.cadenceName.replace(/\s*\([^()]*\)\s*$/, '').trim()
+
   return (
-    <div className="flex flex-col w-full h-full min-h-[960px] bg-[#F7F9FB] p-8 pt-0">
+    <div className="flex flex-col w-full bg-[#F7F9FB] p-8 pt-0">
       {/* ── Header Section ── */}
       <div className="flex flex-row justify-between items-center pb-6">
         {/* Left: Title + subtitle */}
@@ -154,6 +159,16 @@ export function ClientsPage() {
               ACTIVE
             </button>
             <button
+              onClick={() => setActiveTab('inactive')}
+              className={`flex items-center justify-center px-3 py-1 text-xs font-semibold tracking-[0.6px] rounded-[2px] transition-colors ${
+                activeTab === 'inactive'
+                  ? 'bg-[#E6E8EA] text-[#191C1E] shadow-sm'
+                  : 'text-[#464554] hover:bg-[#E6E8EA]/50'
+              }`}
+            >
+              INACTIVE
+            </button>
+            <button
               onClick={() => setActiveTab('all')}
               className={`flex items-center justify-center px-3 py-1 text-xs font-semibold tracking-[0.6px] rounded-[2px] transition-colors ${
                 activeTab === 'all'
@@ -171,7 +186,7 @@ export function ClientsPage() {
       </div>
 
       {/* ── Data Table Surface ── */}
-      <div className="flex flex-col flex-1 bg-white border border-[rgba(199,196,215,0.5)] shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_-1px_rgba(0,0,0,0.1)] rounded-lg overflow-hidden">
+      <div className="flex flex-col bg-white border border-[rgba(199,196,215,0.5)] shadow-[0px_1px_3px_rgba(0,0,0,0.1),0px_1px_2px_-1px_rgba(0,0,0,0.1)] rounded-lg overflow-hidden">
         {/* Table Controls */}
         <div className="flex flex-row justify-between items-center px-4 py-3 bg-[#F7F9FB] border-b border-[rgba(199,196,215,0.5)]">
           {/* Search Input */}
@@ -197,17 +212,34 @@ export function ClientsPage() {
         </div>
 
         {/* Table Container */}
-        <div className="flex-1 overflow-auto">
-          <Table className="min-w-[1000px]">
+        <div className="overflow-auto" style={{ minHeight: 41 + PAGE_SIZE * 49 }}>
+          <Table className="min-w-[1000px] table-fixed">
+            <colgroup>
+              <col className="w-[110px]" />
+              <col className="w-auto" />
+              <col className="w-[140px]" />
+              <col className="w-[110px]" />
+              <col className="w-[110px]" />
+              <col className="w-[160px]" />
+              <col className="w-[140px]" />
+            </colgroup>
             <TableHeader className="bg-[#F7F9FB] sticky top-0 z-10">
               <TableRow className="border-b border-[rgba(199,196,215,0.5)] hover:bg-transparent">
+                <SortableTableHead
+                  label="SHORT CODE"
+                  columnKey="shortcode"
+                  currentSortColumn={sortColumn}
+                  currentSortDirection={sortDirection}
+                  onSort={handleSort}
+                  className="h-10 pl-4 text-xs font-semibold text-[#464554] uppercase tracking-[0.6px] text-left"
+                />
                 <SortableTableHead
                   label="CLIENT NAME"
                   columnKey="cadenceName"
                   currentSortColumn={sortColumn}
                   currentSortDirection={sortDirection}
                   onSort={handleSort}
-                  className="h-10 pl-4 text-xs font-semibold text-[#464554] uppercase tracking-[0.6px]"
+                  className="h-10 text-xs font-semibold text-[#464554] uppercase tracking-[0.6px]"
                 />
                 <SortableTableHead
                   label="VERIFIED %"
@@ -215,7 +247,7 @@ export function ClientsPage() {
                   currentSortColumn={sortColumn}
                   currentSortDirection={sortDirection}
                   onSort={handleSort}
-                  className="h-10 text-xs font-semibold text-[#464554] uppercase tracking-[0.6px] text-center w-[140px]"
+                  className="h-10 text-xs font-semibold text-[#464554] uppercase tracking-[0.6px] text-center"
                 />
                 <SortableTableHead
                   label="DEBTORS"
@@ -223,7 +255,7 @@ export function ClientsPage() {
                   currentSortColumn={sortColumn}
                   currentSortDirection={sortDirection}
                   onSort={handleSort}
-                  className="h-10 text-xs font-semibold text-[#464554] uppercase tracking-[0.6px] text-right w-[110px]"
+                  className="h-10 text-xs font-semibold text-[#464554] uppercase tracking-[0.6px] text-center"
                 />
                 <SortableTableHead
                   label="INVOICES"
@@ -231,7 +263,7 @@ export function ClientsPage() {
                   currentSortColumn={sortColumn}
                   currentSortDirection={sortDirection}
                   onSort={handleSort}
-                  className="h-10 text-xs font-semibold text-[#464554] uppercase tracking-[0.6px] text-right w-[110px]"
+                  className="h-10 text-xs font-semibold text-[#464554] uppercase tracking-[0.6px] text-center"
                 />
                 <SortableTableHead
                   label="TOTAL AMOUNT"
@@ -239,9 +271,9 @@ export function ClientsPage() {
                   currentSortColumn={sortColumn}
                   currentSortDirection={sortDirection}
                   onSort={handleSort}
-                  className="h-10 text-xs font-semibold text-[#464554] uppercase tracking-[0.6px] text-right w-[160px]"
+                  className="h-10 text-xs font-semibold text-[#464554] uppercase tracking-[0.6px] text-center"
                 />
-                <TableHead className="h-10 text-xs font-semibold text-[#464554] uppercase tracking-[0.6px] text-right pr-4 w-[140px]">
+                <TableHead className="h-10 text-xs font-semibold text-[#464554] uppercase tracking-[0.6px] text-right pr-4">
                   ACTIONS
                 </TableHead>
               </TableRow>
@@ -249,13 +281,13 @@ export function ClientsPage() {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-12 text-[#6B7280] text-sm">
+                  <TableCell colSpan={7} className="text-center py-12 text-[#6B7280] text-sm">
                     Loading clients...
                   </TableCell>
                 </TableRow>
               ) : sortedClients.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-12 text-[#6B7280] text-sm">
+                  <TableCell colSpan={7} className="text-center py-12 text-[#6B7280] text-sm">
                     No clients found
                   </TableCell>
                 </TableRow>
@@ -266,19 +298,28 @@ export function ClientsPage() {
                     className="cursor-pointer hover:bg-[#F8FAFC] border-t border-[rgba(199,196,215,0.5)] transition-colors"
                     onClick={() => setSelectedClient(client)}
                   >
-                    {/* Col 1: Avatar + Name */}
+                    {/* Col 1: Short Code */}
                     <TableCell className="pl-4 py-3">
-                      <div className="flex flex-row items-center gap-3">
-                        <div className="flex items-center justify-center w-8 h-8 bg-[#DAE2FD] rounded text-[#4648D4] font-bold text-[14px] leading-5 shrink-0">
-                          {client.shortcode.substring(0, 1).toUpperCase()}
-                        </div>
-                        <span className="text-[13px] font-medium leading-[18px] text-[#191C1E]">
-                          {client.cadenceName}
+                      <span className="text-[13px] font-medium leading-5 text-[#191C1E]">
+                        {client.shortcode}
+                      </span>
+                    </TableCell>
+
+                    {/* Col 2: Name */}
+                    <TableCell className="py-3">
+                      <div className="flex flex-row items-center gap-2">
+                        <span className="text-[13px] font-medium leading-[18px] text-[#191C1E] truncate">
+                          {displayName(client)}
                         </span>
+                        {client.code && (
+                          <span className="text-[11px] font-semibold text-[#4648D4] bg-[#DAE2FD] px-1.5 py-0.5 rounded shrink-0">
+                            {client.code.toUpperCase()}
+                          </span>
+                        )}
                       </div>
                     </TableCell>
 
-                    {/* Col 2: Verified % */}
+                    {/* Col 3: Verified % */}
                     <TableCell className="text-center py-3">
                       {(() => {
                         const stat = clientStats[client.shortcode]
@@ -296,22 +337,22 @@ export function ClientsPage() {
                       })()}
                     </TableCell>
 
-                    {/* Col 3: Debtors */}
-                    <TableCell className="text-right py-3">
+                    {/* Col 4: Debtors */}
+                    <TableCell className="text-center py-3">
                       <span className="text-[13px] font-medium leading-5 text-[#191C1E]">
                         {clientStats[client.shortcode]?.debtorCount ?? '—'}
                       </span>
                     </TableCell>
 
-                    {/* Col 4: Invoices */}
-                    <TableCell className="text-right py-3">
+                    {/* Col 5: Invoices */}
+                    <TableCell className="text-center py-3">
                       <span className="text-[13px] font-medium leading-5 text-[#191C1E]">
                         {clientStats[client.shortcode]?.invoiceCount ?? '—'}
                       </span>
                     </TableCell>
 
-                    {/* Col 5: Total Amount */}
-                    <TableCell className="text-right py-3">
+                    {/* Col 6: Total Amount */}
+                    <TableCell className="text-center py-3">
                       <span className="text-[13px] font-medium leading-5 text-[#191C1E]">
                         {clientStats[client.shortcode] != null
                           ? '$' + clientStats[client.shortcode].totalAmount.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -319,7 +360,7 @@ export function ClientsPage() {
                       </span>
                     </TableCell>
 
-                    {/* Col 6: View Details */}
+                    {/* Col 7: View Details */}
                     <TableCell className="text-right pr-4 py-3">
                       <button
                         className="text-xs font-semibold tracking-[0.6px] text-[#4648D4] hover:text-[#3537b3] transition-colors"
@@ -341,9 +382,19 @@ export function ClientsPage() {
         {/* ── Table Footer / Pagination ── */}
         <div className="border-t-2 border-[#C7C4D7] bg-[#F7F9FB]">
           <div className="flex flex-row items-center justify-between px-4 py-3.5">
-            <span className="text-xs font-semibold tracking-[0.6px] text-[#191C1E]">
-              {filteredClients.length} CLIENTS
-            </span>
+            <div className="flex flex-row items-center gap-3">
+              <span className="text-xs font-semibold tracking-[0.6px] text-[#191C1E]">
+                {totalCount} TOTAL
+              </span>
+              <div className="w-px h-3.5 bg-[#C7C4D7]" />
+              <span className="text-xs font-semibold tracking-[0.6px] text-[#16A34A]">
+                {activeCount} ACTIVE
+              </span>
+              <div className="w-px h-3.5 bg-[#C7C4D7]" />
+              <span className="text-xs font-semibold tracking-[0.6px] text-[#6B7280]">
+                {inactiveCount} INACTIVE
+              </span>
+            </div>
             <div className="flex flex-row items-center gap-3">
               <span className="text-xs text-[#464554]">
                 Page {totalPages === 0 ? 0 : page + 1} of {totalPages}
@@ -363,27 +414,6 @@ export function ClientsPage() {
                 <ChevronRight className="h-4 w-4 text-[#464554]" />
               </button>
             </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Footer Bar ── */}
-      <div className="pt-4">
-        <div className="flex flex-row justify-between items-center px-4 py-2 bg-[#F7F9FB] border border-[rgba(199,196,215,0.5)] shadow-[0px_1px_2px_rgba(0,0,0,0.05)] rounded-sm">
-          <div className="flex flex-row items-center gap-4">
-            {/* Active count */}
-            <div className="flex flex-row items-center gap-2">
-              <div className="w-[13.3px] h-[13.3px] rounded-sm bg-[#16A34A]" />
-              <span className="text-xs font-semibold tracking-[0.6px] text-[#464554]">
-                {activeCount} Active
-              </span>
-            </div>
-
-            <div className="w-px h-4 bg-[#C7C4D7]" />
-
-            <span className="text-[13px] leading-[18px] text-[#464554]">
-              Showing {filteredClients.length} of {totalCount} total clients
-            </span>
           </div>
         </div>
       </div>

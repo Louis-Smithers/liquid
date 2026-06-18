@@ -4,9 +4,6 @@ using Smithers.API.DTOs;
 using Smithers.API.Models;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using PDFtoImage;
-using SkiaSharp;
-using Tesseract;
 
 namespace Smithers.API.Services;
 
@@ -101,6 +98,20 @@ public class OcrPipelineService : IOcrPipelineService
         return Map(batch);
     }
 
+    public async Task<(byte[] Bytes, string FileName)?> GetDocumentFileAsync(Guid batchId, Guid docId, Guid userId)
+    {
+        var doc = await _context.StagedDocuments
+            .Include(d => d.Batch)
+            .FirstOrDefaultAsync(d => d.Id == docId && d.BatchId == batchId)
+            ?? throw new KeyNotFoundException("Document not found.");
+
+        if (doc.Batch.CreatedBy != userId)
+            throw new UnauthorizedAccessException("You do not have access to this batch.");
+
+        var bytes = await _storage.DownloadAsync(doc.StoragePath);
+        return bytes is null ? null : (bytes, doc.FileName);
+    }
+
     public async Task<bool> DiscardBatchAsync(Guid batchId, Guid userId)
     {
         var batch = await LoadBatchAsync(batchId);
@@ -188,6 +199,7 @@ public class OcrPipelineService : IOcrPipelineService
             Verified = true,
             DocumentPath = doc.StoragePath,
             Notes = dto.Notes,
+            Source = "OCR",
             CreatedTime = now,
             ProcessedTime = now,
             UpdatedAt = now
@@ -222,41 +234,19 @@ public class OcrPipelineService : IOcrPipelineService
             }
         }
 
-        // Add to the active Draft sheet for this client (create if none).
-        var sheet = await _context.NotificationSheets
-            .FirstOrDefaultAsync(n => n.ClientShortcode == dto.ClientShortcode && n.Status == "Draft"
-                                   && (n.IsShared || n.CreatedBy == userId));
-        if (sheet == null)
-        {
-            sheet = new NotificationSheet
-            {
-                Id = Guid.NewGuid(),
-                ClientShortcode = dto.ClientShortcode,
-                Status = "Draft",
-                CreatedAt = now,
-                CreatedBy = userId
-            };
-            _context.NotificationSheets.Add(sheet);
-        }
-
-        _context.NotificationSheetItems.Add(new NotificationSheetItem
-        {
-            Id = Guid.NewGuid(),
-            NotificationSheetId = sheet.Id,
-            InvoiceId = invoiceId,
-            IncludedAmount = dto.Amount
-        });
-
         await _context.SaveChangesAsync();
-        return new ConfirmResultDto(invoiceId, sheet.Id);
+        return new ConfirmResultDto(invoiceId);
     }
 
     // ---- OCR worker ------------------------------------------------------
 
-    private async Task ProcessOcrTaskAsync(Guid docId, byte[] pdfBytes)
+    private async Task ProcessOcrTaskAsync(Guid docId, byte[] fileBytes)
     {
         using var scope = _serviceProvider.CreateScope();
         var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var documentOcr = scope.ServiceProvider.GetRequiredService<IDocumentOcr>();
+        var llmExtractor = scope.ServiceProvider.GetRequiredService<ILlmFieldExtractor>();
+
         var doc = await context.StagedDocuments.FindAsync(docId);
         if (doc == null) return;
 
@@ -265,11 +255,13 @@ public class OcrPipelineService : IOcrPipelineService
 
         try
         {
-            var (text, words) = RunOcr(pdfBytes);
-            var fields = ParsePaneVita(text, words);
-            var matches = await MatchAsync(context, text);
+            // Shared OCR handles both PDF and image uploads (fileName is the type hint).
+            var ocr = documentOcr.Run(fileBytes, contentType: null, fileName: doc.FileName);
+            var llm = await llmExtractor.ExtractAsync(ocr.Text, ocr.PageImagePng);
+            var fields = BuildParsedFields(ocr, llm);
+            var matches = await MatchAsync(context, ocr.Text, llm?.VendorName.Value, llm?.BillToName.Value);
 
-            doc.RawText = text.Length > 20000 ? text[..20000] : text;
+            doc.RawText = ocr.Text.Length > 20000 ? ocr.Text[..20000] : ocr.Text;
             doc.ParsedFieldsJson = JsonSerializer.Serialize(fields);
             doc.MatchJson = JsonSerializer.Serialize(matches);
             doc.OcrStatus = "Ready";
@@ -283,51 +275,28 @@ public class OcrPipelineService : IOcrPipelineService
         await context.SaveChangesAsync();
     }
 
-    private record WordBox(string Text, decimal X, decimal Y, decimal W, decimal H, float Conf);
-
     /// <summary>
-    /// Renders page 1 of the PDF to a 300-DPI image (PDFium) and runs Tesseract (eng+fra),
-    /// returning the full page text plus per-word normalized bounding boxes.
+    /// Maps OCR output to parsed fields. Prefers the LLM extraction (confidence comes from the
+    /// model; bbox is recovered by matching the value back to a Tesseract word box). Falls back
+    /// to the legacy layout-specific regex parser when the LLM is unavailable.
     /// </summary>
-    private (string text, List<WordBox> words) RunOcr(byte[] pdfBytes)
+    private static List<ParsedFieldDto> BuildParsedFields(OcrOutput ocr, ExtractedInvoice? llm)
     {
-        using var bitmap = Conversion.ToImage(pdfBytes, page: 0, options: new RenderOptions(Dpi: 300));
-        using var encoded = bitmap.Encode(SKEncodedImageFormat.Png, 100);
-        var png = encoded.ToArray();
+        if (llm == null)
+            return ParsePaneVita(ocr.Text, ocr.Words);
 
-        var tessdata = _config["Tesseract:DataPath"]
-                       ?? Path.Combine(AppContext.BaseDirectory, "tessdata");
-
-        using var engine = new TesseractEngine(tessdata, "eng+fra", EngineMode.Default);
-        using var pix = Pix.LoadFromMemory(png);
-        using var page = engine.Process(pix);
-
-        var text = page.GetText() ?? "";
-        var words = new List<WordBox>();
-
-        using var iter = page.GetIterator();
-        iter.Begin();
-        do
+        return new List<ParsedFieldDto>
         {
-            if (!iter.TryGetBoundingBox(PageIteratorLevel.Word, out var r)) continue;
-            var w = iter.GetText(PageIteratorLevel.Word);
-            if (string.IsNullOrWhiteSpace(w)) continue;
-
-            words.Add(new WordBox(
-                w.Trim(),
-                Math.Round((decimal)r.X1 / pix.Width, 6),
-                Math.Round((decimal)r.Y1 / pix.Height, 6),
-                Math.Round((decimal)r.Width / pix.Width, 6),
-                Math.Round((decimal)r.Height / pix.Height, 6),
-                iter.GetConfidence(PageIteratorLevel.Word)));
-        } while (iter.Next(PageIteratorLevel.Word));
-
-        return (text, words);
+            MakeField("invoiceNumber", llm.InvoiceNumber, ocr.Words),
+            MakeField("date", llm.InvoiceDate, ocr.Words),
+            MakeField("amount", llm.Amount, ocr.Words),
+            MakeField("poNumber", llm.PoNumber, ocr.Words),
+        };
     }
 
-    // ---- Pane Vita field parser (Phase 1 layout only) --------------------
+    // ---- Pane Vita field parser (legacy regex fallback) ------------------
 
-    private static List<ParsedFieldDto> ParsePaneVita(string text, List<WordBox> words)
+    private static List<ParsedFieldDto> ParsePaneVita(string text, IReadOnlyList<OcrWord> words)
     {
         // Pane Vita layout is tabular: Tesseract linearizes it so a label ("Invoice #",
         // "P.O. Number") and its value end up on DIFFERENT lines. So we don't rely on
@@ -403,18 +372,27 @@ public class OcrPipelineService : IOcrPipelineService
         };
     }
 
-    private static ParsedFieldDto MakeField(string name, string? value, List<WordBox> words)
+    // LLM-sourced field: value + confidence come from the model; bbox is recovered by matching
+    // the value back to a Tesseract word box (null bbox if no match).
+    private static ParsedFieldDto MakeField(string name, ExtractedField field, IReadOnlyList<OcrWord> words)
+    {
+        if (string.IsNullOrEmpty(field.Value))
+            return new ParsedFieldDto(name, null, 0m, 1, null, null, null, null);
+
+        var conf = Math.Round(field.Confidence, 2);
+        var wb = OcrWordMatch.FindWord(field.Value, words);
+        return wb == null
+            ? new ParsedFieldDto(name, field.Value, conf, 1, null, null, null, null)
+            : new ParsedFieldDto(name, field.Value, conf, 1, wb.X, wb.Y, wb.W, wb.H);
+    }
+
+    // Regex-fallback field: confidence is derived from the matched word box (legacy behaviour).
+    private static ParsedFieldDto MakeField(string name, string? value, IReadOnlyList<OcrWord> words)
     {
         if (string.IsNullOrEmpty(value))
             return new ParsedFieldDto(name, null, 0m, 1, null, null, null, null);
 
-        // Match against word boxes by alphanumeric content so punctuation/grouping differs
-        // don't block a hit (e.g. value "8181.00" vs OCR word "8,181.00").
-        static string AlphaNum(string s) => new string(s.Where(char.IsLetterOrDigit).ToArray());
-        var needle = AlphaNum(value);
-        var wb = needle.Length == 0
-            ? null
-            : words.FirstOrDefault(w => AlphaNum(w.Text).Contains(needle));
+        var wb = OcrWordMatch.FindWord(value, words);
         if (wb == null)
             return new ParsedFieldDto(name, value, 0.5m, 1, null, null, null, null);
 
@@ -423,24 +401,32 @@ public class OcrPipelineService : IOcrPipelineService
 
     // ---- Client / debtor matching ----------------------------------------
 
-    private static async Task<MatchCandidatesDto> MatchAsync(AppDbContext context, string text)
+    private static async Task<MatchCandidatesDto> MatchAsync(
+        AppDbContext context, string text, string? vendorHint = null, string? billToHint = null)
     {
         var lines = text.Replace("\r", "").Split('\n')
             .Select(l => l.Trim())
             .Where(l => l.Length > 0)
             .ToArray();
 
-        // Vendor = the issuing company (top of invoice = Liquid's client).
-        var vendorName = lines.FirstOrDefault(l => Regex.IsMatch(l, "[A-Za-z]{3,}")) ?? "";
+        // Vendor = the issuing company (top of invoice = Liquid's client). Prefer the LLM's
+        // reading; fall back to the first text line.
+        var vendorName = !string.IsNullOrWhiteSpace(vendorHint)
+            ? vendorHint
+            : lines.FirstOrDefault(l => Regex.IsMatch(l, "[A-Za-z]{3,}")) ?? "";
 
-        // Bill-To = the party billed (the debtor).
-        string billToName = "";
-        for (int i = 0; i < lines.Length - 1; i++)
+        // Bill-To = the party billed (the debtor). Prefer the LLM's reading; fall back to the
+        // line following a "Bill To" label.
+        string billToName = billToHint ?? "";
+        if (string.IsNullOrWhiteSpace(billToName))
         {
-            if (Regex.IsMatch(lines[i], @"bill\s*to", RegexOptions.IgnoreCase))
+            for (int i = 0; i < lines.Length - 1; i++)
             {
-                billToName = lines[i + 1];
-                break;
+                if (Regex.IsMatch(lines[i], @"bill\s*to", RegexOptions.IgnoreCase))
+                {
+                    billToName = lines[i + 1];
+                    break;
+                }
             }
         }
 

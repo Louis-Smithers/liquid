@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   Table,
   TableBody,
@@ -27,6 +28,7 @@ export interface Debtor {
 type SortDirection = "asc" | "desc" | null;
 
 export function DebtorsPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const [debtors, setDebtors] = useState<Debtor[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
@@ -48,6 +50,13 @@ export function DebtorsPage() {
     }
     fetchDebtors()
   }, [])
+
+  useEffect(() => {
+    const debtorId = searchParams.get('debtorId')
+    if (!debtorId || debtors.length === 0) return
+    const match = debtors.find(d => d.id === debtorId)
+    if (match) setSelectedDebtor(match)
+  }, [debtors, searchParams])
 
   const handleSort = (columnKey: string, direction: SortDirection) => {
     setSortColumn(columnKey)
@@ -198,9 +207,12 @@ export function DebtorsPage() {
         </div>
       </div>
 
-      <DebtorDrawer 
-        debtor={selectedDebtor} 
-        onClose={() => setSelectedDebtor(null)} 
+      <DebtorDrawer
+        debtor={selectedDebtor}
+        onClose={() => {
+          setSelectedDebtor(null)
+          if (searchParams.has('debtorId')) setSearchParams({})
+        }}
       />
     </div>
   )

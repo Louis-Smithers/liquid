@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.StaticFiles;
 using System.Security.Claims;
 using Smithers.API.DTOs;
 using Smithers.API.Services;
@@ -46,6 +47,26 @@ public class OcrPipelineController : ControllerBase
         try
         {
             return Ok(await _service.GetBatchAsync(id, GetUserId()));
+        }
+        catch (Exception ex)
+        {
+            return NotFound(ex.Message);
+        }
+    }
+
+    [HttpGet("{id:guid}/files/{fid:guid}/file")]
+    public async Task<IActionResult> GetDocumentFile(Guid id, Guid fid)
+    {
+        try
+        {
+            var result = await _service.GetDocumentFileAsync(id, fid, GetUserId());
+            if (result is null) return NotFound();
+
+            var (bytes, fileName) = result.Value;
+            if (!new FileExtensionContentTypeProvider().TryGetContentType(fileName, out var contentType))
+                contentType = "application/octet-stream";
+
+            return File(bytes, contentType, fileName);
         }
         catch (Exception ex)
         {

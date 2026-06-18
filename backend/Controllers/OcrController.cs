@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.StaticFiles;
 using Smithers.API.DTOs;
 using Smithers.API.Services;
 
@@ -12,8 +13,13 @@ namespace Smithers.API.Controllers;
 public class OcrController : ControllerBase
 {
     private readonly IOcrService _service;
+    private readonly ISupabaseStorage _storage;
 
-    public OcrController(IOcrService service) => _service = service;
+    public OcrController(IOcrService service, ISupabaseStorage storage)
+    {
+        _service = service;
+        _storage = storage;
+    }
 
     [HttpPost("upload")]
     public async Task<IActionResult> UploadPdf(IFormFile file, [FromForm] string invoiceId)
@@ -49,6 +55,25 @@ public class OcrController : ControllerBase
         var (invoiceId, nsId) = await _service.ConfirmAndCreateInvoiceAsync(dto, reviewedBy);
         if (invoiceId == null) return BadRequest("Could not confirm invoice.");
         return Ok(new { invoiceId, notificationSheetId = nsId });
+    }
+
+    // Serves the raw scanned document for preview, e.g. "invoices-raw/{fileId}-{name}.pdf"
+    // as returned in OcrScanResultDto.RawDocumentPath. Restricted to that bucket prefix so
+    // callers can't use this to read arbitrary storage paths.
+    [HttpGet("scan/file")]
+    public async Task<IActionResult> GetScanFile([FromQuery] string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !path.StartsWith("invoices-raw/", StringComparison.Ordinal))
+            return BadRequest("Invalid path.");
+
+        var bytes = await _storage.DownloadAsync(path);
+        if (bytes is null) return NotFound();
+
+        var filename = path.Split('/')[^1];
+        if (!new FileExtensionContentTypeProvider().TryGetContentType(filename, out var contentType))
+            contentType = "application/octet-stream";
+
+        return File(bytes, contentType, filename);
     }
 
     private Guid GetUserId()

@@ -1,5 +1,7 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.StaticFiles;
 using Smithers.API.DTOs;
 using Smithers.API.Services;
 
@@ -11,8 +13,13 @@ namespace Smithers.API.Controllers;
 public class InvoicesController : ControllerBase
 {
     private readonly IInvoiceService _service;
+    private readonly ISupabaseStorage _storage;
 
-    public InvoicesController(IInvoiceService service) => _service = service;
+    public InvoicesController(IInvoiceService service, ISupabaseStorage storage)
+    {
+        _service = service;
+        _storage = storage;
+    }
 
     [HttpGet]
     public async Task<ActionResult<InvoicePageDto>> GetPage(
@@ -53,4 +60,47 @@ public class InvoicesController : ControllerBase
     [HttpGet("aging")]
     public async Task<ActionResult<IEnumerable<AgingClientReportDto>>> GetAgingReport()
         => Ok(await _service.GetAgingReportAsync());
+
+    [HttpGet("{id}/file")]
+    public async Task<IActionResult> GetFile(string id)
+    {
+        var invoice = await _service.GetByIdAsync(id);
+        if (invoice is null) return NotFound();
+        if (string.IsNullOrEmpty(invoice.DocumentPath)) return NotFound();
+
+        var bytes = await _storage.DownloadAsync(invoice.DocumentPath);
+        if (bytes is null) return NotFound();
+
+        var filename = invoice.DocumentPath.Split('/')[^1];
+        if (!new FileExtensionContentTypeProvider().TryGetContentType(filename, out var contentType))
+            contentType = "application/octet-stream";
+
+        return File(bytes, contentType, filename);
+    }
+
+    [HttpGet("{id}/notes")]
+    public async Task<ActionResult<IEnumerable<InvoiceNoteDto>>> GetNotes(string id)
+        => Ok(await _service.GetNotesAsync(id));
+
+    [HttpPost("{id}/notes")]
+    [Authorize(Policy = "StaffOnly")]
+    public async Task<ActionResult<InvoiceNoteDto>> AddNote(string id, CreateInvoiceNoteDto dto)
+    {
+        var note = await _service.AddNoteAsync(id, dto.Text, GetUserId());
+        return note is null ? NotFound() : Ok(note);
+    }
+
+    [HttpPost("notes/bulk")]
+    [Authorize(Policy = "StaffOnly")]
+    public async Task<IActionResult> AddNotesBulk(CreateBulkInvoiceNotesDto dto)
+    {
+        var count = await _service.AddNotesBulkAsync(dto.InvoiceIds, dto.Text, GetUserId());
+        return Ok(new { count });
+    }
+
+    private Guid GetUserId()
+    {
+        var sub = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+        return Guid.TryParse(sub, out var guid) ? guid : Guid.Empty;
+    }
 }

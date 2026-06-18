@@ -32,12 +32,18 @@ export function SortableTableHead({
     }
   };
 
+  const justify = className.includes("text-right")
+    ? "justify-end"
+    : className.includes("text-center")
+    ? "justify-center"
+    : "justify-start";
+
   return (
     <TableHead
       className={`cursor-pointer select-none hover:bg-muted/50 transition-colors ${className}`}
       onClick={handleClick}
     >
-      <div className="flex items-center gap-1">
+      <div className={`flex items-center gap-1 ${justify}`}>
         {label}
         {isActive ? (
           currentSortDirection === "asc" ? (

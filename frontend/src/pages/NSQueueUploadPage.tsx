@@ -1,17 +1,53 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, CheckCircle2 } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { CopyButton } from '@/components/ui/copy-button'
+import { PasteButton } from '@/components/ui/paste-button'
+import { DocumentPreview } from '@/components/ocr/DocumentPreview'
 import { FileDropZone } from '@/components/ocr/FileDropZone'
 import { api } from '@/lib/api'
+import type { UploadBatch, StagedDoc, ConfirmDocPayload } from '@/types/ocr-batch'
+
+interface Client {
+  shortcode: string
+  cadenceName: string
+}
+
+interface Debtor {
+  id: string
+  name: string
+}
+
+const FIELD_LABELS: Record<string, string> = {
+  invoiceNumber: 'Invoice Number',
+  date: 'Invoice Date',
+  amount: 'Amount',
+  poNumber: 'PO Number',
+}
 
 export function NSQueueUploadPage() {
   const navigate = useNavigate()
-  const [step, setStep] = useState(1) // 1: Upload, 2: Poll, 3: Verify
+  const [step, setStep] = useState(1) // 1: Upload, 2: Poll, 3: Verify, 4: Done
   const [batchId, setBatchId] = useState<string | null>(null)
   const [files, setFiles] = useState<File[]>([])
-  const [documents, setDocuments] = useState<any[]>([])
+  const [documents, setDocuments] = useState<StagedDoc[]>([])
   const [currentDocIndex, setCurrentDocIndex] = useState(0)
+  const [activeField, setActiveField] = useState<string | null>(null)
+  const [clients, setClients] = useState<Client[]>([])
+  const [debtors, setDebtors] = useState<Debtor[]>([])
+  const [confirming, setConfirming] = useState(false)
+
+  // Per-document form state, keyed by doc id, so edits survive re-polling.
+  const [forms, setForms] = useState<Record<string, ConfirmDocPayload>>({})
+
+  useEffect(() => {
+    api.get<Client[]>('/api/clients').then(res => setClients(res.data)).catch(() => {})
+    api.get<Debtor[]>('/api/debtors').then(res => setDebtors(res.data)).catch(() => {})
+  }, [])
 
   // Navigate away protection
   useEffect(() => {
@@ -29,36 +65,64 @@ export function NSQueueUploadPage() {
     setFiles(prev => [...prev, newFile])
   }
 
+  const fieldVal = (doc: StagedDoc, name: string) => doc.fields.find(f => f.fieldName === name)?.value ?? ''
+
+  const buildFormFromDoc = useCallback((doc: StagedDoc): ConfirmDocPayload => {
+    const bestClient = doc.match.clients[0]
+    const bestDebtor = doc.match.debtors[0]
+    return {
+      invoiceNumber: fieldVal(doc, 'invoiceNumber'),
+      invoiceDate: fieldVal(doc, 'date') || new Date().toISOString().split('T')[0],
+      amount: Number(fieldVal(doc, 'amount')) || 0,
+      clientShortcode: bestClient?.shortcode ?? '',
+      createClient: false,
+      debtorId: bestDebtor?.id ?? null,
+      newDebtorName: bestDebtor ? null : '',
+      poRef: fieldVal(doc, 'poNumber') || null,
+      notes: null,
+    }
+  }, [])
+
   const startUpload = async () => {
     if (files.length === 0) return
     try {
       const batchRes = await api.post('/api/ocr/batch')
       const newBatchId = batchRes.data.id
       setBatchId(newBatchId)
-      
+
       const formData = new FormData()
       files.forEach(f => formData.append('files', f))
-      
+
       await api.post(`/api/ocr/batch/${newBatchId}/files`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       })
-      
+
       setStep(2)
       pollBatch(newBatchId)
-    } catch (err) {
+    } catch {
       alert("Failed to upload files.")
     }
   }
 
-  const pollBatch = async (id: string) => {
+  const pollBatch = (id: string) => {
     const interval = setInterval(async () => {
       try {
-        const res = await api.get(`/api/ocr/batch/${id}`)
+        const res = await api.get<UploadBatch>(`/api/ocr/batch/${id}`)
         setDocuments(res.data.documents)
-        
-        const allReadyOrFailed = res.data.documents.every((d: any) => d.ocrStatus === 'Ready' || d.ocrStatus === 'Failed')
+
+        const allReadyOrFailed = res.data.documents.every(d => d.ocrStatus === 'Ready' || d.ocrStatus === 'Failed')
         if (allReadyOrFailed && res.data.documents.length > 0) {
           clearInterval(interval)
+          // Seed editable form state for every doc that's ready to review.
+          setForms(prev => {
+            const next = { ...prev }
+            for (const doc of res.data.documents) {
+              if (doc.ocrStatus === 'Ready' && !next[doc.id]) {
+                next[doc.id] = buildFormFromDoc(doc)
+              }
+            }
+            return next
+          })
           setStep(3)
         }
       } catch (err) {
@@ -67,20 +131,41 @@ export function NSQueueUploadPage() {
     }, 2000)
   }
 
-  const handleConfirm = async (formData: any) => {
-    if (!batchId) return
-    const doc = documents[currentDocIndex]
+  const reviewableDocs = documents.filter(d => d.ocrStatus === 'Ready')
+  const currentDoc = reviewableDocs[currentDocIndex]
+  const currentForm = currentDoc ? forms[currentDoc.id] : undefined
+
+  const updateForm = (patch: Partial<ConfirmDocPayload>) => {
+    if (!currentDoc) return
+    setForms(prev => ({ ...prev, [currentDoc.id]: { ...prev[currentDoc.id], ...patch } }))
+  }
+
+  const handleConfirm = async () => {
+    if (!batchId || !currentDoc || !currentForm) return
+    if (!currentForm.invoiceNumber) { alert('Invoice number is required.'); return }
+    if (!currentForm.clientShortcode) { alert('Client is required.'); return }
+
+    setConfirming(true)
     try {
-      await api.post(`/api/ocr/batch/${batchId}/files/${doc.id}/confirm`, formData)
-      
-      if (currentDocIndex < documents.length - 1) {
+      await api.post(`/api/ocr/batch/${batchId}/files/${currentDoc.id}/confirm`, currentForm)
+
+      if (currentDocIndex < reviewableDocs.length - 1) {
         setCurrentDocIndex(prev => prev + 1)
+        setActiveField(null)
       } else {
-        setStep(4) // Done
+        setStep(4)
       }
-    } catch (err) {
+    } catch {
       alert("Failed to confirm document.")
+    } finally {
+      setConfirming(false)
     }
+  }
+
+  const isLow = (name: string) => {
+    if (!currentDoc) return false
+    const conf = currentDoc.fields.find(f => f.fieldName === name)?.confidence ?? 1
+    return conf < 0.8
   }
 
   return (
@@ -124,48 +209,122 @@ export function NSQueueUploadPage() {
           </div>
         )}
 
-        {step === 3 && documents.length > 0 && (
+        {step === 3 && currentDoc && currentForm && (
           <div className="flex h-full gap-6">
-            {/* Verify UI (Side by side) */}
-            <div className="flex-1 bg-slate-50 border rounded-lg flex items-center justify-center p-4 overflow-hidden relative">
-              <span className="text-slate-400">PDF Preview (react-pdf would render here with bbox overlays)</span>
+            {/* Document preview with bbox highlights */}
+            <div className="flex-1 bg-slate-50 border rounded-lg p-2 overflow-hidden relative">
+              <DocumentPreview
+                fileUrl={`/api/ocr/batch/${batchId}/files/${currentDoc.id}/file`}
+                fields={currentDoc.fields.map(f => ({
+                  fieldName: f.fieldName,
+                  bboxX: f.bboxX,
+                  bboxY: f.bboxY,
+                  bboxWidth: f.bboxWidth,
+                  bboxHeight: f.bboxHeight,
+                }))}
+                activeField={activeField}
+                onFieldClick={setActiveField}
+              />
             </div>
-            
-            <div className="w-[400px] border rounded-lg p-6 flex flex-col space-y-4 bg-white">
-              <h3 className="font-semibold text-lg">Verify Data ({currentDocIndex + 1} of {documents.length})</h3>
-              <p className="text-sm text-slate-500">File: {documents[currentDocIndex].fileName}</p>
-              
-              {/* Form placeholder */}
+
+            <div className="w-[420px] border rounded-lg p-6 flex flex-col space-y-4 bg-white overflow-y-auto">
+              <h3 className="font-semibold text-lg">Verify Data ({currentDocIndex + 1} of {reviewableDocs.length})</h3>
+              <p className="text-sm text-slate-500">File: {currentDoc.fileName}</p>
+
               <div className="flex-1 space-y-4">
-                 <p className="text-xs text-amber-600 bg-amber-50 p-2 border border-amber-200 rounded">
-                   Review extracted fields below. Matches are pre-filled.
-                 </p>
-                 {documents[currentDocIndex].fields?.map((f: any, i: number) => (
-                    <div key={i} className="flex flex-col gap-1 text-sm">
-                      <label className="font-medium text-slate-700 capitalize">{f.fieldName}</label>
-                      <input className="border rounded p-2" defaultValue={f.value} />
+                {/* Extracted fields */}
+                {currentDoc.fields.map(f => {
+                  const label = FIELD_LABELS[f.fieldName] ?? f.fieldName
+                  const low = isLow(f.fieldName)
+                  return (
+                    <div key={f.fieldName} className="flex flex-col gap-1 text-sm">
+                      <div className="flex items-center justify-between">
+                        <label className={`font-medium ${low ? 'text-amber-600' : 'text-slate-700'}`}>{label}</label>
+                        {low && <span className="text-xs text-amber-600 flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Low confidence</span>}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <input
+                          className={`flex-1 border rounded p-2 ${low ? 'border-amber-400 bg-amber-50' : ''} ${activeField === f.fieldName ? 'ring-1 ring-[#4648D4]' : ''}`}
+                          value={
+                            f.fieldName === 'invoiceNumber' ? currentForm.invoiceNumber :
+                            f.fieldName === 'date' ? currentForm.invoiceDate :
+                            f.fieldName === 'amount' ? String(currentForm.amount) :
+                            f.fieldName === 'poNumber' ? currentForm.poRef ?? '' : ''
+                          }
+                          onFocus={() => setActiveField(f.fieldName)}
+                          onChange={e => {
+                            const v = e.target.value
+                            if (f.fieldName === 'invoiceNumber') updateForm({ invoiceNumber: v })
+                            else if (f.fieldName === 'date') updateForm({ invoiceDate: v })
+                            else if (f.fieldName === 'amount') updateForm({ amount: Number(v) || 0 })
+                            else if (f.fieldName === 'poNumber') updateForm({ poRef: v })
+                          }}
+                        />
+                        <PasteButton onPaste={v => {
+                          if (f.fieldName === 'invoiceNumber') updateForm({ invoiceNumber: v })
+                          else if (f.fieldName === 'date') updateForm({ invoiceDate: v })
+                          else if (f.fieldName === 'amount') updateForm({ amount: Number(v) || 0 })
+                          else if (f.fieldName === 'poNumber') updateForm({ poRef: v })
+                        }} />
+                        <CopyButton value={f.value ?? ''} />
+                      </div>
                     </div>
-                 ))}
-                 
-                 {/* Client/Debtor Mock Form */}
-                 <div className="flex flex-col gap-1 text-sm pt-4 border-t">
-                    <label className="font-medium text-slate-700">Client Shortcode</label>
-                    <input className="border rounded p-2" defaultValue="TEST" />
-                 </div>
-                 <div className="flex flex-col gap-1 text-sm">
-                    <label className="font-medium text-slate-700">Debtor Name (or select ID)</label>
-                    <input className="border rounded p-2" defaultValue="Test Debtor" />
-                 </div>
+                  )
+                })}
+
+                {/* Client */}
+                <div className="space-y-1.5 pt-4 border-t">
+                  <Label>Client</Label>
+                  <Select value={currentForm.clientShortcode} onValueChange={v => updateForm({ clientShortcode: v })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a client…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {clients.map(c => (
+                        <SelectItem key={c.shortcode} value={c.shortcode}>{c.cadenceName} ({c.shortcode})</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {currentDoc.match.clients.length > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      Best match: {currentDoc.match.clients[0].name} ({Math.round(currentDoc.match.clients[0].score * 100)}%)
+                    </p>
+                  )}
+                </div>
+
+                {/* Debtor */}
+                <div className="space-y-1.5 rounded-md border p-3">
+                  <Label>Debtor</Label>
+                  <Select
+                    value={currentForm.debtorId ?? 'new'}
+                    onValueChange={v => updateForm(v === 'new' ? { debtorId: null, newDebtorName: '' } : { debtorId: v, newDebtorName: null })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select debtor or create new…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="new">— Create New Debtor —</SelectItem>
+                      {debtors.map(d => (
+                        <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {currentForm.debtorId === null && (
+                    <div className="mt-2 flex items-center gap-1">
+                      <Input
+                        placeholder="New debtor name"
+                        value={currentForm.newDebtorName ?? ''}
+                        onChange={e => updateForm({ newDebtorName: e.target.value })}
+                      />
+                      <PasteButton onPaste={v => updateForm({ newDebtorName: v })} />
+                    </div>
+                  )}
+                </div>
               </div>
-              
-              <Button className="w-full" onClick={() => handleConfirm({
-                  invoiceNumber: "INV-" + Math.floor(Math.random() * 10000),
-                  invoiceDate: new Date().toISOString().split('T')[0],
-                  amount: 100,
-                  clientShortcode: "TEST",
-                  newDebtorName: "Test Debtor",
-                  addToNsQueue: true
-              })}>Confirm & Add to Draft</Button>
+
+              <Button className="w-full" onClick={handleConfirm} disabled={confirming || !currentForm.invoiceNumber}>
+                {confirming ? 'Confirming…' : 'Confirm & Add to Draft'}
+              </Button>
             </div>
           </div>
         )}

@@ -170,6 +170,7 @@ public class ImportQueueService : IImportQueueService
 
         var now = DateTimeOffset.UtcNow;
         int resolved = 0, skipped = 0;
+        var invoiceIdsAddedThisRun = new HashSet<string>();
 
         foreach (var item in items)
         {
@@ -198,9 +199,10 @@ public class ImportQueueService : IImportQueueService
                 DateOnly.TryParse(item.InvoiceDate, out var parsed))
                 invoiceDate = parsed;
 
-            // Deduplicate: skip if invoice already exists
+            // Deduplicate: skip if invoice already exists in the DB or was already added earlier in this run
             var invoiceId = $"{shortcode}_{item.InvoiceNumber}";
-            if (await _context.Invoices.AnyAsync(i => i.InvoiceId == invoiceId))
+            if (invoiceIdsAddedThisRun.Contains(invoiceId) ||
+                await _context.Invoices.AnyAsync(i => i.InvoiceId == invoiceId))
             {
                 item.ReviewStatus = "Resolved";
                 item.ResolvedBy = resolvedBy;
@@ -209,6 +211,7 @@ public class ImportQueueService : IImportQueueService
                 continue;
             }
 
+            invoiceIdsAddedThisRun.Add(invoiceId);
             _context.Invoices.Add(new Invoice
             {
                 InvoiceId = invoiceId,

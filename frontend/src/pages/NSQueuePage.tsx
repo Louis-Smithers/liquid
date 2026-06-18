@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { api } from '@/lib/api'
 import type { NotificationSheetDto } from '@/types/ns-queue'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -25,7 +26,10 @@ interface Invoice {
 }
 
 export function NSQueuePage() {
-  const [view, setView] = useState<'list' | 'builder' | 'detail'>('list')
+  const [searchParams] = useSearchParams()
+  const [view, setView] = useState<'list' | 'builder' | 'detail'>(
+    searchParams.get('view') === 'builder' ? 'builder' : 'list'
+  )
   const [queues, setQueues] = useState<NotificationSheetDto[]>([])
   const [loading, setLoading] = useState(false)
   const [filter, setFilter] = useState<'Draft' | 'Submitted' | 'All'>('All')
@@ -35,7 +39,7 @@ export function NSQueuePage() {
   const [detailSheet, setDetailSheet] = useState<NotificationSheetDto | null>(null)
 
   const [clients, setClients] = useState<Client[]>([])
-  const [builderClient, setBuilderClient] = useState<string>('')
+  const [builderClient, setBuilderClient] = useState<string>(searchParams.get('client') ?? '')
   const [builderInvoices, setBuilderInvoices] = useState<Invoice[]>([])
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<string[]>([])
   const [isSaving, setIsSaving] = useState(false)

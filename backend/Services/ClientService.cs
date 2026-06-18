@@ -29,7 +29,7 @@ public class ClientService : IClientService
                 c.Active,
                 c.Dnc,
                 c.Email, c.Phone, c.Notes, c.City, c.Province, c.PostalCode, c.Language,
-                c.ReserveRate, c.DiscountRate, c.Address, c.Contact))
+                c.ReserveRate, c.DiscountRate, c.Address, c.Contact, c.Code))
             .ToListAsync();
     }
 
@@ -45,7 +45,7 @@ public class ClientService : IClientService
             c.Active,
             c.Dnc,
             c.Email, c.Phone, c.Notes, c.City, c.Province, c.PostalCode, c.Language,
-            c.ReserveRate, c.DiscountRate, c.Address, c.Contact);
+            c.ReserveRate, c.DiscountRate, c.Address, c.Contact, c.Code);
     }
 
     public async Task<ClientDto> CreateAsync(CreateClientDto dto)
@@ -67,7 +67,8 @@ public class ClientService : IClientService
             ReserveRate = dto.ReserveRate,
             DiscountRate = dto.DiscountRate,
             Address = dto.Address,
-            Contact = dto.Contact
+            Contact = dto.Contact,
+            Code = dto.Code
         };
 
         _context.Clients.Add(client);
@@ -79,7 +80,7 @@ public class ClientService : IClientService
             client.Active,
             client.Dnc,
             client.Email, client.Phone, client.Notes, client.City, client.Province, client.PostalCode, client.Language,
-            client.ReserveRate, client.DiscountRate, client.Address, client.Contact);
+            client.ReserveRate, client.DiscountRate, client.Address, client.Contact, client.Code);
     }
 
     public async Task<bool> UpdateAsync(string shortcode, UpdateClientDto dto)
@@ -101,6 +102,7 @@ public class ClientService : IClientService
         if (dto.DiscountRate.HasValue) client.DiscountRate = dto.DiscountRate;
         if (dto.Address is not null) client.Address = dto.Address;
         if (dto.Contact is not null) client.Contact = dto.Contact;
+        if (dto.Code is not null) client.Code = dto.Code;
 
         await _context.SaveChangesAsync();
         return true;

@@ -1,5 +1,7 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, Fragment } from 'react'
 import { Link } from 'react-router-dom'
+import { InvoicePreviewModal } from "@/components/invoices/InvoicePreviewModal"
+import { InvoiceNotesPopover } from "@/components/invoices/InvoiceNotesPopover"
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
@@ -16,7 +18,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Search, Plus, Check, ChevronDown, ChevronRight, FileText, Loader2, ShoppingCart } from "lucide-react"
+import { Search, ChevronDown, ChevronRight, FileText, Loader2, ShoppingCart, ExternalLink } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { api } from "@/lib/api"
@@ -59,6 +61,8 @@ interface Invoice {
   notes?: string
   flagged?: boolean
   flagReason?: string
+  source: string
+  isProcessed: boolean
 }
 
 interface NotificationSheet {
@@ -303,9 +307,17 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
   // Dialog visibility
   const [newDebtorOpen, setNewDebtorOpen] = useState(false)
   const [assignmentLetterOpen, setAssignmentLetterOpen] = useState(false)
+  const [previewInvoice, setPreviewInvoice] = useState<{ id: string; originalInvoice: string } | null>(null)
 
   // Invoice search filter
   const [invoiceSearch, setInvoiceSearch] = useState('')
+
+  // Unprocessed/Processed split
+  const [unprocessedExpanded, setUnprocessedExpanded] = useState(false)
+  const [unprocessedSelected, setUnprocessedSelected] = useState<string[]>([])
+  const [addingToQueue, setAddingToQueue] = useState(false)
+  const [bulkNoteDraft, setBulkNoteDraft] = useState('')
+  const [postingBulkNote, setPostingBulkNote] = useState(false)
 
   useEffect(() => {
     if (client) {
@@ -357,8 +369,50 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
   }
 
   const handleSelectAll = (checked: boolean) => {
-    if (checked) setSelectedInvoices(invoices.map(i => i.invoiceId))
+    if (checked) setSelectedInvoices(processedInvoices.map(i => i.invoiceId))
     else setSelectedInvoices([])
+  }
+
+  const toggleUnprocessedInvoice = (invoiceId: string) => {
+    setUnprocessedSelected(prev =>
+      prev.includes(invoiceId) ? prev.filter(id => id !== invoiceId) : [...prev, invoiceId]
+    )
+  }
+
+  const handleAddSelectedToQueue = async () => {
+    if (unprocessedSelected.length === 0 || !client) return
+    setAddingToQueue(true)
+    try {
+      for (const invoiceId of unprocessedSelected) {
+        const inv = unprocessedInvoices.find(i => i.invoiceId === invoiceId)
+        if (!inv) continue
+        await addItem(inv.invoiceId, inv.amount, client.shortcode)
+      }
+      setUnprocessedSelected([])
+      const invoicesRes = await api.get<Invoice[]>(`/api/invoices/client/${client.shortcode}`)
+      setInvoices(invoicesRes.data)
+    } catch (err) {
+      console.error('Failed to add invoices to NS queue', err)
+    } finally {
+      setAddingToQueue(false)
+    }
+  }
+
+  const handlePostBulkNote = async () => {
+    if (!bulkNoteDraft.trim() || selectedInvoices.length === 0) return
+    setPostingBulkNote(true)
+    try {
+      await api.post('/api/invoices/notes/bulk', {
+        invoiceIds: selectedInvoices,
+        text: bulkNoteDraft.trim()
+      })
+      setBulkNoteDraft('')
+      setSelectedInvoices([])
+    } catch (err) {
+      console.error('Failed to post bulk note', err)
+    } finally {
+      setPostingBulkNote(false)
+    }
   }
 
   const toggleInvoice = (invoiceId: string) => {
@@ -427,8 +481,18 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
     )
   }, [invoices, invoiceSearch])
 
+  const unprocessedInvoices = useMemo(
+    () => filteredInvoices.filter(inv => !inv.isProcessed),
+    [filteredInvoices]
+  )
+
+  const processedInvoices = useMemo(
+    () => filteredInvoices.filter(inv => inv.isProcessed),
+    [filteredInvoices]
+  )
+
   const sortedInvoices = useMemo(() => {
-    const sorted = [...filteredInvoices]
+    const sorted = [...processedInvoices]
     if (!invoiceSortCol || !invoiceSortDir) return sorted
     sorted.sort((a, b) => {
       let aVal: any, bVal: any
@@ -442,7 +506,7 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
       return 0
     })
     return sorted
-  }, [filteredInvoices, invoiceSortCol, invoiceSortDir])
+  }, [processedInvoices, invoiceSortCol, invoiceSortDir])
 
   return (
     <>
@@ -454,6 +518,11 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
           shortcode={client.shortcode}
         />
       )}
+      <InvoicePreviewModal
+        invoiceId={previewInvoice?.id ?? null}
+        originalInvoice={previewInvoice?.originalInvoice}
+        onClose={() => setPreviewInvoice(null)}
+      />
 
       <Sheet open={!!client} onOpenChange={(open) => !open && onClose()} modal={false}>
         <SheetContent className="w-full sm:max-w-[1000px] sm:w-[1000px] overflow-y-auto bg-[#F7F9FB] p-0 border-l border-[#C7C4D7]/50 shadow-xl">
@@ -461,30 +530,12 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
             <div className="flex flex-col h-full">
 
               {/* Header */}
-              <SheetHeader className="p-6 shrink-0 bg-white border-b border-[#C7C4D7]/50">
-                <div className="flex flex-row items-center justify-between">
-                  <div className="flex flex-col">
-                    <SheetTitle className="text-[22px] font-semibold text-[#191C1E] tracking-tight flex items-center gap-3">
-                      {client.cadenceName}
-                      <span className="text-sm font-normal text-[#6B7280] bg-slate-100 px-2 py-0.5 rounded">
-                        {client.shortcode}
-                      </span>
-                    </SheetTitle>
-                    <div className="flex items-center gap-4 mt-2 text-sm text-[#464554]">
-                      <span><strong className="text-[#191C1E]">@:</strong> {client.email || 'N/A'}</span>
-                      <span><strong className="text-[#191C1E]">#:</strong> {client.phone || 'N/A'}</span>
-                      <span><strong className="text-[#191C1E]">Lang:</strong> {client.language || 'EN'}</span>
-                    </div>
-                    <div className="flex items-center gap-2 mt-2">
-                      <Badge variant="outline" className="bg-[#EEF2FF] text-[#4648D4] border-[#C7D2FE] font-semibold text-xs">
-                        Fee: {client.discountRate != null ? `${(client.discountRate * 100).toFixed(1)}%` : 'N/A'}
-                      </Badge>
-                      <Badge variant="outline" className="bg-[#FFF7ED] text-[#C2410C] border-[#FDBA74] font-semibold text-xs">
-                        Reserve: {client.reserveRate != null ? `${(client.reserveRate * 100).toFixed(1)}%` : 'N/A'}
-                      </Badge>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
+              <SheetHeader className="p-6 pr-10 shrink-0 bg-white border-b border-[#C7C4D7]/50">
+                <div className="flex flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                  <SheetTitle className="text-[22px] font-semibold text-[#191C1E] tracking-tight">
+                    {client.cadenceName}
+                  </SheetTitle>
+                  <div className="flex items-center gap-2 shrink-0">
                     <Button variant="outline" className="h-8 text-xs font-semibold"
                       onClick={() => setNewDebtorOpen(true)}>
                       New Debtor
@@ -508,7 +559,7 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
               </SheetHeader>
 
               <div className="p-6 flex-1">
-                <Tabs defaultValue="overview" className="w-full flex flex-col h-full">
+                <Tabs defaultValue="overview" className="w-full flex flex-col">
                   <TabsList className="grid w-full grid-cols-4 mb-4">
                     <TabsTrigger value="overview">Overview</TabsTrigger>
                     <TabsTrigger value="debtors">Debtors</TabsTrigger>
@@ -516,7 +567,7 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
                     <TabsTrigger value="details">Client Details</TabsTrigger>
                   </TabsList>
 
-                  <div className="overflow-auto">
+                  <div>
                     {loading && <div className="text-center p-8 text-muted-foreground">Loading data...</div>}
 
                     {!loading && (
@@ -589,25 +640,38 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
 
                         {/* ── Debtors ── */}
                         <TabsContent value="debtors" className="bg-white rounded-lg shadow-sm border border-slate-200">
-                          <Table className="min-w-[800px]">
+                          <table className="w-full caption-bottom text-sm min-w-[800px] table-fixed">
+                            <colgroup>
+                              <col className="w-8" />
+                              <col />
+                              <col className="w-16" />
+                              <col className="w-24" />
+                              <col className="w-20" />
+                              <col className="w-20" />
+                              <col className="w-20" />
+                              <col className="w-20" />
+                              <col className="w-20" />
+                              <col className="w-16" />
+                            </colgroup>
                             <TableHeader>
-                              <TableRow className="hover:bg-transparent bg-slate-50 border-b">
+                              <TableRow className="hover:bg-transparent bg-slate-50 border-b sticky top-0 z-20">
                                 {/* expand toggle col */}
                                 <TableHead className="h-9 w-8" />
                                 <SortableTableHead label="NAME" columnKey="name" currentSortColumn={debtorSortCol} currentSortDirection={debtorSortDir} onSort={handleDebtorSort} className="h-9 text-[11px]" />
-                                <SortableTableHead label="# INV" columnKey="invoiceCount" currentSortColumn={debtorSortCol} currentSortDirection={debtorSortDir} onSort={handleDebtorSort} className="h-9 text-[11px] text-right" />
-                                <SortableTableHead label="$ TOTAL" columnKey="totalAmount" currentSortColumn={debtorSortCol} currentSortDirection={debtorSortDir} onSort={handleDebtorSort} className="h-9 text-[11px] text-right" />
-                                <SortableTableHead label="0–30d" columnKey="aging.d30" currentSortColumn={debtorSortCol} currentSortDirection={debtorSortDir} onSort={handleDebtorSort} className="h-9 text-[11px] text-right" />
-                                <SortableTableHead label="31–60d" columnKey="aging.d60" currentSortColumn={debtorSortCol} currentSortDirection={debtorSortDir} onSort={handleDebtorSort} className="h-9 text-[11px] text-right" />
-                                <SortableTableHead label="61–90d" columnKey="aging.d90" currentSortColumn={debtorSortCol} currentSortDirection={debtorSortDir} onSort={handleDebtorSort} className="h-9 text-[11px] text-right" />
-                                <SortableTableHead label="91–120d" columnKey="aging.d120" currentSortColumn={debtorSortCol} currentSortDirection={debtorSortDir} onSort={handleDebtorSort} className="h-9 text-[11px] text-right" />
-                                <SortableTableHead label="120+d" columnKey="aging.over120" currentSortColumn={debtorSortCol} currentSortDirection={debtorSortDir} onSort={handleDebtorSort} className="h-9 text-[11px] text-right text-red-700" />
+                                <SortableTableHead label="# INV" columnKey="invoiceCount" currentSortColumn={debtorSortCol} currentSortDirection={debtorSortDir} onSort={handleDebtorSort} className="h-9 text-[11px] text-center" />
+                                <SortableTableHead label="$ TOTAL" columnKey="totalAmount" currentSortColumn={debtorSortCol} currentSortDirection={debtorSortDir} onSort={handleDebtorSort} className="h-9 text-[11px] text-center" />
+                                <SortableTableHead label="0–30d" columnKey="aging.d30" currentSortColumn={debtorSortCol} currentSortDirection={debtorSortDir} onSort={handleDebtorSort} className="h-9 text-[11px] text-center" />
+                                <SortableTableHead label="31–60d" columnKey="aging.d60" currentSortColumn={debtorSortCol} currentSortDirection={debtorSortDir} onSort={handleDebtorSort} className="h-9 text-[11px] text-center" />
+                                <SortableTableHead label="61–90d" columnKey="aging.d90" currentSortColumn={debtorSortCol} currentSortDirection={debtorSortDir} onSort={handleDebtorSort} className="h-9 text-[11px] text-center" />
+                                <SortableTableHead label="91–120d" columnKey="aging.d120" currentSortColumn={debtorSortCol} currentSortDirection={debtorSortDir} onSort={handleDebtorSort} className="h-9 text-[11px] text-center" />
+                                <SortableTableHead label="120+d" columnKey="aging.over120" currentSortColumn={debtorSortCol} currentSortDirection={debtorSortDir} onSort={handleDebtorSort} className="h-9 text-[11px] text-center text-red-700" />
+                                <TableHead className="h-9 text-[11px] text-center">ACTIONS</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
                               {sortedDebtors.length === 0 && (
                                 <TableRow>
-                                  <TableCell colSpan={9} className="text-center py-10 text-sm text-muted-foreground">
+                                  <TableCell colSpan={10} className="text-center py-10 text-sm text-muted-foreground">
                                     No debtors found for this client.
                                   </TableCell>
                                 </TableRow>
@@ -617,10 +681,9 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
                                 const dInvs = debtorInvoices[d.id] || []
                                 const dLoading = debtorInvoicesLoading[d.id]
                                 return (
-                                  <>
+                                  <Fragment key={d.id}>
                                     <TableRow
-                                      key={d.id}
-                                      className="h-10 border-b cursor-pointer hover:bg-slate-50"
+                                      className={`h-10 border-b cursor-pointer hover:bg-slate-50 ${isExpanded ? 'bg-white' : ''}`}
                                       onClick={() => toggleDebtorExpand(d.id)}
                                     >
                                       <TableCell className="pl-3 pr-0 py-1 w-8">
@@ -629,19 +692,29 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
                                           : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
                                       </TableCell>
                                       <TableCell className="font-medium text-xs py-1">{d.name}</TableCell>
-                                      <TableCell className="text-right text-xs py-1 tabular-nums">{d.invoiceCount}</TableCell>
-                                      <TableCell className="text-right text-xs font-semibold py-1 tabular-nums">{formatCurrency(d.totalAmount)}</TableCell>
-                                      <TableCell className="text-right text-xs text-muted-foreground py-1 tabular-nums">{formatCurrency(d.aging.d30)}</TableCell>
-                                      <TableCell className="text-right text-xs text-muted-foreground py-1 tabular-nums">{formatCurrency(d.aging.d60)}</TableCell>
-                                      <TableCell className="text-right text-xs text-muted-foreground py-1 tabular-nums">{formatCurrency(d.aging.d90)}</TableCell>
-                                      <TableCell className="text-right text-xs text-muted-foreground py-1 tabular-nums">{formatCurrency(d.aging.d120)}</TableCell>
-                                      <TableCell className="text-right text-xs text-red-600 py-1 tabular-nums">{formatCurrency(d.aging.over120)}</TableCell>
+                                      <TableCell className="text-center text-xs py-1 tabular-nums">{d.invoiceCount}</TableCell>
+                                      <TableCell className="text-center text-xs font-semibold py-1 tabular-nums">{formatCurrency(d.totalAmount)}</TableCell>
+                                      <TableCell className="text-center text-xs text-muted-foreground py-1 tabular-nums">{formatCurrency(d.aging.d30)}</TableCell>
+                                      <TableCell className="text-center text-xs text-muted-foreground py-1 tabular-nums">{formatCurrency(d.aging.d60)}</TableCell>
+                                      <TableCell className="text-center text-xs text-muted-foreground py-1 tabular-nums">{formatCurrency(d.aging.d90)}</TableCell>
+                                      <TableCell className="text-center text-xs text-muted-foreground py-1 tabular-nums">{formatCurrency(d.aging.d120)}</TableCell>
+                                      <TableCell className="text-center text-xs text-red-600 py-1 tabular-nums">{formatCurrency(d.aging.over120)}</TableCell>
+                                      <TableCell className="text-center py-1">
+                                        <Link
+                                          to={`/debtors?debtorId=${d.id}`}
+                                          onClick={(e) => e.stopPropagation()}
+                                          className="inline-flex items-center justify-center h-6 w-6 rounded hover:bg-slate-200 text-muted-foreground hover:text-[#191C1E]"
+                                          title="Open in Debtors"
+                                        >
+                                          <ExternalLink className="h-3.5 w-3.5" />
+                                        </Link>
+                                      </TableCell>
                                     </TableRow>
 
                                     {/* Expanded invoice rows */}
                                     {isExpanded && (
                                       <TableRow key={`${d.id}-invoices`} className="bg-slate-50/80 border-b">
-                                        <TableCell colSpan={9} className="p-0">
+                                        <TableCell colSpan={10} className="p-0">
                                           {dLoading ? (
                                             <div className="flex items-center gap-2 px-10 py-3 text-xs text-muted-foreground">
                                               <Loader2 className="h-3 w-3 animate-spin" /> Loading invoices...
@@ -649,98 +722,251 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
                                           ) : dInvs.length === 0 ? (
                                             <p className="px-10 py-3 text-xs text-muted-foreground">No invoices found.</p>
                                           ) : (
-                                            <table className="w-full text-xs">
-                                              <thead>
+                                            <div className="max-h-[320px] overflow-y-auto">
+                                            <table className="w-full text-xs table-fixed">
+                                              <colgroup>
+                                                <col className="w-8" />
+                                                <col />
+                                                <col className="w-16" />
+                                                <col className="w-24" />
+                                                <col className="w-20" />
+                                                <col className="w-20" />
+                                                <col className="w-20" />
+                                                <col className="w-20" />
+                                                <col className="w-20" />
+                                                <col className="w-16" />
+                                              </colgroup>
+                                              <thead className="sticky top-0 z-10">
                                                 <tr className="border-b border-slate-200 text-[10px] font-semibold text-[#464554] uppercase tracking-[0.5px]">
-                                                  <th className="text-left py-1.5 pl-10">Invoice</th>
-                                                  <th className="text-left py-1.5">Date</th>
-                                                  <th className="text-right py-1.5">Age</th>
-                                                  <th className="text-right py-1.5 pr-4">Amount</th>
-                                                  <th className="text-left py-1.5">Status</th>
+                                                  <th className="py-1.5 bg-slate-50" />
+                                                  <th className="text-left py-1.5 pl-2 bg-slate-50">Invoice / Date</th>
+                                                  <th className="text-center py-1.5 bg-slate-50">Age</th>
+                                                  <th className="text-center py-1.5 bg-slate-50">Total</th>
+                                                  <th className="text-center py-1.5 bg-slate-50">0–30d</th>
+                                                  <th className="text-center py-1.5 bg-slate-50">31–60d</th>
+                                                  <th className="text-center py-1.5 bg-slate-50">61–90d</th>
+                                                  <th className="text-center py-1.5 bg-slate-50">91–120d</th>
+                                                  <th className="text-center py-1.5 bg-slate-50 text-red-700">120+d</th>
+                                                  <th className="text-center py-1.5 bg-slate-50">Status</th>
                                                 </tr>
                                               </thead>
                                               <tbody>
-                                                {dInvs.map(inv => (
-                                                  <tr key={inv.invoiceId} className="border-b border-slate-100 last:border-0 hover:bg-slate-100">
-                                                    <td className="py-1.5 pl-10">
-                                                      <Link to={`/gate/${inv.invoiceId}`} className="text-blue-600 hover:underline font-medium">
-                                                        {inv.originalInvoice}
-                                                      </Link>
+                                                {dInvs.map(inv => {
+                                                  const age = computeAge(inv.date)
+                                                  const bucket = age <= 30 ? 'd30' : age <= 60 ? 'd60' : age <= 90 ? 'd90' : age <= 120 ? 'd120' : 'over120'
+                                                  const amountCell = (key: typeof bucket) => (
+                                                    <td className="py-1.5 text-center tabular-nums">
+                                                      {bucket === key ? `$${inv.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : ''}
                                                     </td>
-                                                    <td className="py-1.5 text-muted-foreground">{inv.date}</td>
-                                                    <td className="py-1.5 text-right text-muted-foreground tabular-nums">{computeAge(inv.date)}d</td>
-                                                    <td className="py-1.5 text-right font-semibold pr-4 tabular-nums">${inv.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                                                    <td className="py-1.5">
-                                                      <Badge variant="outline" className={`text-[10px] h-5 px-1.5 border-transparent font-semibold ${
-                                                        inv.status === 'Pre-Verified' ? 'bg-[#DCFCE7] text-[#15803D]' :
-                                                        inv.status === 'Unverified' ? 'bg-[#FEF9C3] text-[#A16207]' :
-                                                        inv.status === 'Paid' ? 'bg-slate-800 text-white' :
-                                                        inv.status === 'OA' ? 'bg-blue-100 text-blue-800' :
-                                                        'bg-[#FEE2E2] text-[#B91C1C]'
-                                                      }`}>{inv.status}</Badge>
-                                                    </td>
-                                                  </tr>
-                                                ))}
+                                                  )
+                                                  return (
+                                                    <tr key={inv.invoiceId} className="border-b border-slate-100 last:border-0 hover:bg-slate-100">
+                                                      <td className="py-1.5" />
+                                                      <td className="py-1.5 pl-2">
+                                                        <button
+                                                          type="button"
+                                                          onClick={() => setPreviewInvoice({ id: inv.invoiceId, originalInvoice: inv.originalInvoice })}
+                                                          className="text-blue-600 hover:underline font-medium"
+                                                        >
+                                                          {inv.originalInvoice}
+                                                        </button>
+                                                        <span className="text-muted-foreground"> · {inv.date}</span>
+                                                      </td>
+                                                      <td className="py-1.5 text-center text-muted-foreground tabular-nums">{age}d</td>
+                                                      <td className="py-1.5 text-center font-semibold tabular-nums">${inv.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                                                      {amountCell('d30')}
+                                                      {amountCell('d60')}
+                                                      {amountCell('d90')}
+                                                      {amountCell('d120')}
+                                                      {amountCell('over120')}
+                                                      <td className="py-1.5 text-center">
+                                                        <Badge variant="outline" className={`text-[10px] h-5 px-1.5 border-transparent font-semibold ${
+                                                          inv.status === 'Pre-Verified' ? 'bg-[#DCFCE7] text-[#15803D]' :
+                                                          inv.status === 'Unverified' ? 'bg-[#FEF9C3] text-[#A16207]' :
+                                                          inv.status === 'Paid' ? 'bg-slate-800 text-white' :
+                                                          inv.status === 'OA' ? 'bg-blue-100 text-blue-800' :
+                                                          'bg-[#FEE2E2] text-[#B91C1C]'
+                                                        }`}>{inv.status}</Badge>
+                                                      </td>
+                                                    </tr>
+                                                  )
+                                                })}
                                               </tbody>
                                             </table>
+                                            </div>
                                           )}
                                         </TableCell>
                                       </TableRow>
                                     )}
-                                  </>
+                                  </Fragment>
                                 )
                               })}
                             </TableBody>
-                          </Table>
+                          </table>
                         </TabsContent>
 
                         {/* ── Invoices ── */}
-                        <TabsContent value="invoices" className="bg-white rounded-lg shadow-sm border border-slate-200 flex flex-col h-full">
-                          <div className="flex flex-row justify-between items-center px-4 py-2 bg-slate-50 border-b">
-                            <div className="relative w-48">
-                              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                              <Input
-                                placeholder="Search..."
-                                className="pl-7 h-8 text-xs bg-white"
-                                value={invoiceSearch}
-                                onChange={e => setInvoiceSearch(e.target.value)}
-                              />
-                            </div>
+                        <TabsContent value="invoices" className="space-y-4">
+                          {/* Unprocessed (collapsed by default) */}
+                          <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+                            <button
+                              type="button"
+                              onClick={() => setUnprocessedExpanded(prev => !prev)}
+                              className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50"
+                            >
+                              <div className="flex items-center gap-2">
+                                {unprocessedExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+                                <span className="text-sm font-semibold text-[#191C1E]">Unprocessed</span>
+                              </div>
+                              <Badge variant="outline" className="bg-[#FEF9C3] text-[#A16207] border-transparent font-semibold">
+                                {unprocessedInvoices.length}
+                              </Badge>
+                            </button>
+                            {unprocessedExpanded && (
+                              <div className="border-t border-slate-200">
+                                <div className="flex items-center justify-between px-4 py-2 bg-slate-50 border-b gap-2">
+                                  <span className="text-xs text-muted-foreground">
+                                    {unprocessedSelected.length > 0 ? `${unprocessedSelected.length} selected` : 'Not yet added to a Notification Sheet'}
+                                  </span>
+                                  <div className="flex items-center gap-2">
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-7 text-xs"
+                                      disabled={unprocessedSelected.length === 0 || addingToQueue}
+                                      onClick={handleAddSelectedToQueue}
+                                    >
+                                      {addingToQueue ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : `Add Selected to NS Queue`}
+                                    </Button>
+                                    <Link to={`/ns-queue?view=builder&client=${client.shortcode}`}>
+                                      <Button size="sm" className="h-7 text-xs bg-[#4648D4] hover:bg-[#3537b3]">
+                                        Go to NS Builder
+                                      </Button>
+                                    </Link>
+                                  </div>
+                                </div>
+                                <div className="overflow-auto max-h-[320px]">
+                                  <Table>
+                                    <TableHeader className="bg-slate-50 sticky top-0 z-10 border-b">
+                                      <TableRow>
+                                        <TableHead className="w-10 pl-4">
+                                          <Checkbox
+                                            checked={unprocessedSelected.length > 0 && unprocessedSelected.length === unprocessedInvoices.length}
+                                            onCheckedChange={(checked) => setUnprocessedSelected(checked ? unprocessedInvoices.map(i => i.invoiceId) : [])}
+                                          />
+                                        </TableHead>
+                                        <TableHead className="h-9 text-[11px]">INVOICE</TableHead>
+                                        <TableHead className="h-9 text-[11px]">DATE</TableHead>
+                                        <TableHead className="h-9 text-[11px] text-right">AMOUNT</TableHead>
+                                        <TableHead className="h-9 text-[11px]">DEBTOR</TableHead>
+                                        <TableHead className="h-9 text-[11px]">SOURCE</TableHead>
+                                      </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                      {unprocessedInvoices.length === 0 && (
+                                        <TableRow>
+                                          <TableCell colSpan={6} className="text-center py-8 text-sm text-muted-foreground">
+                                            No unprocessed invoices.
+                                          </TableCell>
+                                        </TableRow>
+                                      )}
+                                      {unprocessedInvoices.map(inv => (
+                                        <TableRow key={inv.invoiceId} className="h-10 border-b">
+                                          <TableCell className="pl-4 py-1">
+                                            <Checkbox checked={unprocessedSelected.includes(inv.invoiceId)} onCheckedChange={() => toggleUnprocessedInvoice(inv.invoiceId)} />
+                                          </TableCell>
+                                          <TableCell className="font-medium text-blue-600 py-1 text-xs">
+                                            <button
+                                              type="button"
+                                              onClick={() => setPreviewInvoice({ id: inv.invoiceId, originalInvoice: inv.originalInvoice })}
+                                              className="hover:underline"
+                                            >
+                                              {inv.originalInvoice}
+                                            </button>
+                                          </TableCell>
+                                          <TableCell className="text-muted-foreground py-1 text-xs">{inv.date}</TableCell>
+                                          <TableCell className="text-right font-semibold py-1 text-xs tabular-nums">${inv.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                                          <TableCell className="py-1 text-xs">{inv.debtorName || '-'}</TableCell>
+                                          <TableCell className="py-1 text-xs text-muted-foreground">{inv.source}</TableCell>
+                                        </TableRow>
+                                      ))}
+                                    </TableBody>
+                                  </Table>
+                                </div>
+                              </div>
+                            )}
                           </div>
-                          <div className="overflow-auto flex-1">
-                            <Table>
-                              <TableHeader className="bg-slate-50 sticky top-0 shadow-sm z-10 border-b">
-                                <TableRow>
-                                  <TableHead className="w-10 pl-4">
-                                    <Checkbox checked={selectedInvoices.length > 0 && selectedInvoices.length === invoices.length} onCheckedChange={handleSelectAll} />
-                                  </TableHead>
-                                  <SortableTableHead label="INVOICE" columnKey="originalInvoice" currentSortColumn={invoiceSortCol} currentSortDirection={invoiceSortDir} onSort={handleInvoiceSort} className="h-9 text-[11px]" />
-                                  <SortableTableHead label="DATE" columnKey="date" currentSortColumn={invoiceSortCol} currentSortDirection={invoiceSortDir} onSort={handleInvoiceSort} className="h-9 text-[11px]" />
-                                  <SortableTableHead label="AGE" columnKey="_age" currentSortColumn={invoiceSortCol} currentSortDirection={invoiceSortDir} onSort={handleInvoiceSort} className="h-9 text-[11px] text-right" />
-                                  <SortableTableHead label="AMOUNT" columnKey="amount" currentSortColumn={invoiceSortCol} currentSortDirection={invoiceSortDir} onSort={handleInvoiceSort} className="h-9 text-[11px] text-right" />
-                                  <SortableTableHead label="DEBTOR" columnKey="debtorName" currentSortColumn={invoiceSortCol} currentSortDirection={invoiceSortDir} onSort={handleInvoiceSort} className="h-9 text-[11px]" />
-                                  <SortableTableHead label="STATUS" columnKey="status" currentSortColumn={invoiceSortCol} currentSortDirection={invoiceSortDir} onSort={handleInvoiceSort} className="h-9 text-[11px]" />
-                                  <SortableTableHead label="FLAG" columnKey="flagged" currentSortColumn={invoiceSortCol} currentSortDirection={invoiceSortDir} onSort={handleInvoiceSort} className="h-9 text-[11px] text-center" />
-                                  <TableHead className="h-9 text-[11px] w-12 text-center">NS</TableHead>
-                                </TableRow>
-                              </TableHeader>
-                              <TableBody>
-                                {sortedInvoices.length === 0 && (
+
+                          {/* Processed */}
+                          <div className="bg-white rounded-lg shadow-sm border border-slate-200 flex flex-col">
+                            <div className="flex flex-row justify-between items-center px-4 py-2 bg-slate-50 border-b gap-2">
+                              <div className="relative w-48">
+                                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                                <Input
+                                  placeholder="Search..."
+                                  className="pl-7 h-8 text-xs bg-white"
+                                  value={invoiceSearch}
+                                  onChange={e => setInvoiceSearch(e.target.value)}
+                                />
+                              </div>
+                              {selectedInvoices.length > 0 && (
+                                <div className="flex items-center gap-2 flex-1 max-w-md">
+                                  <Input
+                                    placeholder={`Add note to ${selectedInvoices.length} selected...`}
+                                    className="h-8 text-xs bg-white"
+                                    value={bulkNoteDraft}
+                                    onChange={e => setBulkNoteDraft(e.target.value)}
+                                    onKeyDown={e => { if (e.key === 'Enter') handlePostBulkNote() }}
+                                  />
+                                  <Button
+                                    size="sm"
+                                    className="h-8 text-xs bg-[#4648D4] hover:bg-[#3537b3] shrink-0"
+                                    disabled={!bulkNoteDraft.trim() || postingBulkNote}
+                                    onClick={handlePostBulkNote}
+                                  >
+                                    {postingBulkNote ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : `Add Note`}
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
+                            <div className="overflow-auto flex-1 max-h-[480px]">
+                              <Table>
+                                <TableHeader className="bg-slate-50 sticky top-0 shadow-sm z-10 border-b">
                                   <TableRow>
-                                    <TableCell colSpan={9} className="text-center py-10 text-sm text-muted-foreground">
-                                      {invoiceSearch ? 'No invoices match your search.' : 'No invoices found for this client.'}
-                                    </TableCell>
+                                    <TableHead className="w-10 pl-4">
+                                      <Checkbox checked={selectedInvoices.length > 0 && selectedInvoices.length === processedInvoices.length} onCheckedChange={handleSelectAll} />
+                                    </TableHead>
+                                    <SortableTableHead label="INVOICE" columnKey="originalInvoice" currentSortColumn={invoiceSortCol} currentSortDirection={invoiceSortDir} onSort={handleInvoiceSort} className="h-9 text-[11px]" />
+                                    <SortableTableHead label="DATE" columnKey="date" currentSortColumn={invoiceSortCol} currentSortDirection={invoiceSortDir} onSort={handleInvoiceSort} className="h-9 text-[11px]" />
+                                    <SortableTableHead label="AGE" columnKey="_age" currentSortColumn={invoiceSortCol} currentSortDirection={invoiceSortDir} onSort={handleInvoiceSort} className="h-9 text-[11px] text-right" />
+                                    <SortableTableHead label="AMOUNT" columnKey="amount" currentSortColumn={invoiceSortCol} currentSortDirection={invoiceSortDir} onSort={handleInvoiceSort} className="h-9 text-[11px] text-right" />
+                                    <SortableTableHead label="DEBTOR" columnKey="debtorName" currentSortColumn={invoiceSortCol} currentSortDirection={invoiceSortDir} onSort={handleInvoiceSort} className="h-9 text-[11px]" />
+                                    <SortableTableHead label="STATUS" columnKey="status" currentSortColumn={invoiceSortCol} currentSortDirection={invoiceSortDir} onSort={handleInvoiceSort} className="h-9 text-[11px]" />
+                                    <SortableTableHead label="FLAG" columnKey="flagged" currentSortColumn={invoiceSortCol} currentSortDirection={invoiceSortDir} onSort={handleInvoiceSort} className="h-9 text-[11px] text-center" />
+                                    <TableHead className="h-9 text-[11px] w-16 text-center">NOTES</TableHead>
                                   </TableRow>
-                                )}
-                                {sortedInvoices.map((inv) => {
-                                  const isInQueue = activeQueue?.items.some(i => i.invoiceId === inv.invoiceId)
-                                  return (
+                                </TableHeader>
+                                <TableBody>
+                                  {sortedInvoices.length === 0 && (
+                                    <TableRow>
+                                      <TableCell colSpan={9} className="text-center py-10 text-sm text-muted-foreground">
+                                        {invoiceSearch ? 'No invoices match your search.' : 'No processed invoices for this client.'}
+                                      </TableCell>
+                                    </TableRow>
+                                  )}
+                                  {sortedInvoices.map((inv) => (
                                     <TableRow key={inv.invoiceId} className="h-10 border-b">
                                       <TableCell className="pl-4 py-1">
                                         <Checkbox checked={selectedInvoices.includes(inv.invoiceId)} onCheckedChange={() => toggleInvoice(inv.invoiceId)} />
                                       </TableCell>
                                       <TableCell className="font-medium text-blue-600 py-1 text-xs">
-                                        <Link to={`/gate/${inv.invoiceId}`} className="hover:underline">{inv.originalInvoice}</Link>
+                                        <button
+                                          type="button"
+                                          onClick={() => setPreviewInvoice({ id: inv.invoiceId, originalInvoice: inv.originalInvoice })}
+                                          className="hover:underline"
+                                        >
+                                          {inv.originalInvoice}
+                                        </button>
                                       </TableCell>
                                       <TableCell className="text-muted-foreground py-1 text-xs">{inv.date}</TableCell>
                                       <TableCell className="text-right py-1 text-xs text-muted-foreground tabular-nums">{computeAge(inv.date)}d</TableCell>
@@ -763,22 +989,13 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
                                         )}
                                       </TableCell>
                                       <TableCell className="py-1 text-center pr-4">
-                                        <Button
-                                          variant="ghost"
-                                          size="icon"
-                                          className="h-6 w-6"
-                                          disabled={isInQueue}
-                                          onClick={(e) => { e.stopPropagation(); if (!isInQueue) addItem(inv.invoiceId, inv.amount) }}
-                                          title={isInQueue ? "In Queue" : "Add to NS Queue"}
-                                        >
-                                          {isInQueue ? <Check className="h-4 w-4 text-muted-foreground" /> : <Plus className="h-4 w-4 text-blue-600" />}
-                                        </Button>
+                                        <InvoiceNotesPopover invoiceId={inv.invoiceId} originalInvoice={inv.originalInvoice} />
                                       </TableCell>
                                     </TableRow>
-                                  )
-                                })}
-                              </TableBody>
-                            </Table>
+                                  ))}
+                                </TableBody>
+                              </Table>
+                            </div>
                           </div>
                         </TabsContent>
 
@@ -788,6 +1005,10 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
                             <CardHeader className="text-lg font-semibold">Client Details</CardHeader>
                             <CardContent className="space-y-4">
                               <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                  <Label>Alpha Code</Label>
+                                  <Input name="code" value={detailsForm.code || ''} onChange={handleDetailsChange} placeholder="e.g. SAF" />
+                                </div>
                                 <div className="space-y-2">
                                   <Label>Email</Label>
                                   <Input name="email" value={detailsForm.email || ''} onChange={handleDetailsChange} />

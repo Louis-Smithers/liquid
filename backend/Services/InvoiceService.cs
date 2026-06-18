@@ -16,7 +16,7 @@ public class InvoiceService : IInvoiceService
         _currentUser = currentUser;
     }
 
-    private static InvoiceDto ToDto(Invoice p) => new(
+    private static InvoiceDto ToDto(Invoice p, bool isProcessed = false) => new(
         p.InvoiceId,
         p.OriginalInvoice,
         p.Date,
@@ -37,8 +37,20 @@ public class InvoiceService : IInvoiceService
         p.FlagTimestamp,
         p.Terms,
         p.ProcessedTime,
-        p.Verified
+        p.Verified,
+        p.Source,
+        isProcessed
     );
+
+    private async Task<HashSet<string>> GetProcessedInvoiceIdsAsync(IEnumerable<string> invoiceIds) =>
+        (await _context.NotificationSheetItems
+            .Where(i => invoiceIds.Contains(i.InvoiceId))
+            .Select(i => i.InvoiceId)
+            .Distinct()
+            .ToListAsync())
+        .ToHashSet();
+
+    private static InvoiceNoteDto ToNoteDto(InvoiceNote n) => new(n.Id, n.InvoiceId, n.Text, n.CreatedBy, n.CreatedAt);
 
     public async Task<InvoicePageDto> GetPageAsync(
         string? search, string? status,
@@ -70,12 +82,14 @@ public class InvoiceService : IInvoiceService
                 p.CreatedTime < cursorTime.Value ||
                 (p.CreatedTime == cursorTime.Value && string.Compare(p.InvoiceId, cursorId) < 0));
 
-        var items = await query
+        var entities = await query
             .OrderByDescending(p => p.CreatedTime)
             .ThenByDescending(p => p.InvoiceId)
             .Take(pageSize + 1)
-            .Select(p => ToDto(p))
             .ToListAsync();
+
+        var processedIds = await GetProcessedInvoiceIdsAsync(entities.Select(p => p.InvoiceId));
+        var items = entities.Select(p => ToDto(p, processedIds.Contains(p.InvoiceId))).ToList();
 
         string? nextCursorTime = null;
         string? nextCursorId = null;
@@ -94,12 +108,14 @@ public class InvoiceService : IInvoiceService
         if (_currentUser.IsClient && shortcode != _currentUser.ClientShortcode)
             return Enumerable.Empty<InvoiceDto>();
 
-        return await _context.Invoices
+        var entities = await _context.Invoices
             .Include(p => p.Debtor)
             .Where(p => p.LiquidClient == shortcode)
             .OrderByDescending(p => p.Date)
-            .Select(p => ToDto(p))
             .ToListAsync();
+
+        var processedIds = await GetProcessedInvoiceIdsAsync(entities.Select(p => p.InvoiceId));
+        return entities.Select(p => ToDto(p, processedIds.Contains(p.InvoiceId)));
     }
 
     public async Task<IEnumerable<InvoiceDto>> GetByDebtorAsync(Guid debtorId)
@@ -111,10 +127,12 @@ public class InvoiceService : IInvoiceService
         if (_currentUser.IsClient)
             query = query.Where(p => p.LiquidClient == _currentUser.ClientShortcode);
 
-        return await query
+        var entities = await query
             .OrderByDescending(p => p.Date)
-            .Select(p => ToDto(p))
             .ToListAsync();
+
+        var processedIds = await GetProcessedInvoiceIdsAsync(entities.Select(p => p.InvoiceId));
+        return entities.Select(p => ToDto(p, processedIds.Contains(p.InvoiceId)));
     }
 
     public async Task<InvoiceDto?> GetByIdAsync(string invoiceId)
@@ -129,7 +147,8 @@ public class InvoiceService : IInvoiceService
         if (_currentUser.IsClient && p.LiquidClient != _currentUser.ClientShortcode)
             return null;
 
-        return ToDto(p);
+        var isProcessed = await _context.NotificationSheetItems.AnyAsync(i => i.InvoiceId == invoiceId);
+        return ToDto(p, isProcessed);
     }
 
     public async Task<bool> UpdateStatusAsync(string invoiceId, string status)
@@ -178,5 +197,56 @@ public class InvoiceService : IInvoiceService
                         );
                     }).ToList()
             )).ToList();
+    }
+
+    public async Task<IEnumerable<InvoiceNoteDto>> GetNotesAsync(string invoiceId)
+    {
+        return await _context.InvoiceNotes
+            .Where(n => n.InvoiceId == invoiceId)
+            .OrderByDescending(n => n.CreatedAt)
+            .Select(n => ToNoteDto(n))
+            .ToListAsync();
+    }
+
+    public async Task<InvoiceNoteDto?> AddNoteAsync(string invoiceId, string text, Guid userId)
+    {
+        var exists = await _context.Invoices.AnyAsync(p => p.InvoiceId == invoiceId);
+        if (!exists) return null;
+
+        var note = new InvoiceNote
+        {
+            Id = Guid.NewGuid(),
+            InvoiceId = invoiceId,
+            Text = text,
+            CreatedBy = userId,
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        _context.InvoiceNotes.Add(note);
+        await _context.SaveChangesAsync();
+        return ToNoteDto(note);
+    }
+
+    public async Task<int> AddNotesBulkAsync(IEnumerable<string> invoiceIds, string text, Guid userId)
+    {
+        var ids = invoiceIds.Distinct().ToList();
+        var validIds = await _context.Invoices
+            .Where(p => ids.Contains(p.InvoiceId))
+            .Select(p => p.InvoiceId)
+            .ToListAsync();
+
+        var now = DateTimeOffset.UtcNow;
+        foreach (var id in validIds)
+        {
+            _context.InvoiceNotes.Add(new InvoiceNote
+            {
+                Id = Guid.NewGuid(),
+                InvoiceId = id,
+                Text = text,
+                CreatedBy = userId,
+                CreatedAt = now
+            });
+        }
+        await _context.SaveChangesAsync();
+        return validIds.Count;
     }
 }

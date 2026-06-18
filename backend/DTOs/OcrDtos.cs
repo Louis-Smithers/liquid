@@ -1,6 +1,14 @@
 namespace Smithers.API.DTOs;
 
-public record OcrFieldDto(string FieldName, string? ExtractedValue, decimal Confidence);
+public record OcrFieldDto(
+    string FieldName,
+    string? ExtractedValue,
+    decimal Confidence,
+    decimal? BboxX = null,
+    decimal? BboxY = null,
+    decimal? BboxWidth = null,
+    decimal? BboxHeight = null
+);
 public record OcrScanResultDto(string RawDocumentPath, OcrFieldDto[] Fields);
 public record OcrConfirmDto(string RawDocumentPath, string InvoiceNumber, DateOnly InvoiceDate, decimal Amount, string ClientShortcode, Guid? DebtorId, string? NewDebtorName, bool AddToNsQueue, string? Notes);
 
@@ -30,4 +38,4 @@ public record ClientMatch(string Id, string Shortcode, string Name, decimal Scor
 public record DebtorMatch(Guid Id, string Name, decimal Score);
 public record MatchCandidatesDto(ClientMatch[] Clients, DebtorMatch[] Debtors);
 public record ConfirmDocDto(string InvoiceNumber, DateOnly InvoiceDate, decimal Amount, string ClientShortcode, bool CreateClient, Guid? DebtorId, string? NewDebtorName, string? PoRef, string? Notes);
-public record ConfirmResultDto(string InvoiceId, Guid? NotificationSheetId);
+public record ConfirmResultDto(string InvoiceId);

@@ -10,4 +10,7 @@ public interface IInvoiceService
     Task<InvoiceDto?> GetByIdAsync(string invoiceId);
     Task<bool> UpdateStatusAsync(string invoiceId, string status);
     Task<IEnumerable<AgingClientReportDto>> GetAgingReportAsync();
+    Task<IEnumerable<InvoiceNoteDto>> GetNotesAsync(string invoiceId);
+    Task<InvoiceNoteDto?> AddNoteAsync(string invoiceId, string text, Guid userId);
+    Task<int> AddNotesBulkAsync(IEnumerable<string> invoiceIds, string text, Guid userId);
 }

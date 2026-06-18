@@ -5,7 +5,6 @@ import { AppLayout } from './components/layout/AppLayout'
 import { ClientsPage } from './pages/ClientsPage'
 import { DebtorsPage } from './pages/DebtorsPage'
 import { ImportQueuePage } from './pages/ImportQueuePage'
-import { AgingReportPage } from './pages/AgingReportPage'
 import { TheGatePage } from './pages/TheGatePage'
 import { NSQueuePage } from './pages/NSQueuePage'
 import { NSQueueUploadPage } from './pages/NSQueueUploadPage'
@@ -62,7 +61,6 @@ function App() {
               <Route path="/clients" element={<ClientsPage />} />
               <Route path="/debtors" element={<DebtorsPage />} />
               <Route path="/queue" element={<ImportQueuePage />} />
-              <Route path="/aging" element={<AgingReportPage />} />
               <Route path="/gate/:invoiceId" element={<TheGatePage />} />
               <Route path="/ns-queue" element={<NSQueuePage />} />
               <Route path="/ns-queue/upload" element={<NSQueueUploadPage />} />

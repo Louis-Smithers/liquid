@@ -52,4 +52,7 @@ public class Invoice
     public int? Terms { get; set; }
     public DateTimeOffset? ProcessedTime { get; set; }
     public bool Verified { get; set; } = false;
+
+    /// <summary>Origin of the invoice: "Import" (n8n/DebAging.xlsm) or "OCR" (scanned upload).</summary>
+    public string Source { get; set; } = "Import";
 }

@@ -21,8 +21,22 @@ public record InvoiceDto(
     DateTimeOffset? FlagTimestamp = null,
     int? Terms = null,
     DateTimeOffset? ProcessedTime = null,
-    bool Verified = false
+    bool Verified = false,
+    string Source = "Import",
+    bool IsProcessed = false
 );
+
+public record InvoiceNoteDto(
+    Guid Id,
+    string InvoiceId,
+    string Text,
+    Guid? CreatedBy,
+    DateTimeOffset CreatedAt
+);
+
+public record CreateInvoiceNoteDto(string Text);
+
+public record CreateBulkInvoiceNotesDto(IEnumerable<string> InvoiceIds, string Text);
 
 public record InvoicePageDto(
     IEnumerable<InvoiceDto> Items,

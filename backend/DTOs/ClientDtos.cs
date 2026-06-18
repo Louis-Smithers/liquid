@@ -1,9 +1,9 @@
 namespace Smithers.API.DTOs;
 
 public record ClientDto(
-    string Shortcode, 
-    string? CadenceName, 
-    bool Active, 
+    string Shortcode,
+    string? CadenceName,
+    bool Active,
     bool Dnc,
     string? Email = null,
     string? Phone = null,
@@ -15,12 +15,13 @@ public record ClientDto(
     decimal? ReserveRate = null,
     decimal? DiscountRate = null,
     string? Address = null,
-    string? Contact = null
+    string? Contact = null,
+    string? Code = null
 );
 
 public record UpdateClientDto(
-    string? CadenceName, 
-    bool? Active, 
+    string? CadenceName,
+    bool? Active,
     bool? Dnc,
     string? Email,
     string? Phone,
@@ -32,13 +33,14 @@ public record UpdateClientDto(
     decimal? ReserveRate,
     decimal? DiscountRate,
     string? Address,
-    string? Contact
+    string? Contact,
+    string? Code = null
 );
 
 public record CreateClientDto(
-    string Shortcode, 
-    string? CadenceName, 
-    bool Active = true, 
+    string Shortcode,
+    string? CadenceName,
+    bool Active = true,
     bool Dnc = false,
     string? Email = null,
     string? Phone = null,
@@ -50,7 +52,8 @@ public record CreateClientDto(
     decimal? ReserveRate = null,
     decimal? DiscountRate = null,
     string? Address = null,
-    string? Contact = null
+    string? Contact = null,
+    string? Code = null
 );
 
 public record ClientStatDto(string Shortcode, decimal VerifiedPercent, int DebtorCount, int InvoiceCount, decimal TotalAmount);

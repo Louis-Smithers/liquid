@@ -13,6 +13,7 @@ public class AppDbContext : DbContext
     public DbSet<Debtor> Debtors => Set<Debtor>();
     public DbSet<Invoice> Invoices => Set<Invoice>();
     public DbSet<InvoiceOcrResult> InvoiceOcrResults => Set<InvoiceOcrResult>();
+    public DbSet<InvoiceNote> InvoiceNotes => Set<InvoiceNote>();
     public DbSet<ImportRun> ImportRuns => Set<ImportRun>();
     public DbSet<ImportReviewQueue> ImportReviewQueue => Set<ImportReviewQueue>();
     public DbSet<NotificationSheet> NotificationSheets => Set<NotificationSheet>();
@@ -63,12 +64,30 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<Invoice>()
             .ToTable("invoices");
 
+        modelBuilder.Entity<Invoice>()
+            .Property(p => p.Source)
+            .HasDefaultValue("Import");
+
         // InvoiceOcrResult -> Invoice
         modelBuilder.Entity<InvoiceOcrResult>()
             .HasOne(r => r.Invoice)
             .WithMany()
             .HasForeignKey(r => r.InvoiceId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        // InvoiceNote -> Invoice
+        modelBuilder.Entity<InvoiceNote>()
+            .HasOne(n => n.Invoice)
+            .WithMany()
+            .HasForeignKey(n => n.InvoiceId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<InvoiceNote>()
+            .Property(n => n.CreatedAt)
+            .HasDefaultValueSql("now()");
+
+        modelBuilder.Entity<InvoiceNote>()
+            .ToTable("invoice_notes");
 
         // ImportReviewQueue — owned by n8n, no FK to ImportRun.
         // id is SERIAL (auto-increment integer), run_id is a TEXT string from n8n.

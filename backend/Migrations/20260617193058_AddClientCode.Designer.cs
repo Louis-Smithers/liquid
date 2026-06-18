@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Smithers.API.Data;
@@ -11,9 +12,11 @@ using Smithers.API.Data;
 namespace Smithers.API.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260617193058_AddClientCode")]
+    partial class AddClientCode
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -383,13 +386,6 @@ namespace Smithers.API.Migrations
                         .HasColumnType("text")
                         .HasColumnName("schedule_number");
 
-                    b.Property<string>("Source")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("text")
-                        .HasDefaultValue("Import")
-                        .HasColumnName("source");
-
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasColumnType("text")
@@ -418,42 +414,6 @@ namespace Smithers.API.Migrations
                         .HasDatabaseName("ix_invoices_liquid_client_original_invoice");
 
                     b.ToTable("invoices", (string)null);
-                });
-
-            modelBuilder.Entity("Smithers.API.Models.InvoiceNote", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at")
-                        .HasDefaultValueSql("now()");
-
-                    b.Property<Guid?>("CreatedBy")
-                        .HasColumnType("uuid")
-                        .HasColumnName("created_by");
-
-                    b.Property<string>("InvoiceId")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("invoice_id");
-
-                    b.Property<string>("Text")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("text");
-
-                    b.HasKey("Id")
-                        .HasName("pk_invoice_notes");
-
-                    b.HasIndex("InvoiceId")
-                        .HasDatabaseName("ix_invoice_notes_invoice_id");
-
-                    b.ToTable("invoice_notes", (string)null);
                 });
 
             modelBuilder.Entity("Smithers.API.Models.InvoiceOcrResult", b =>
@@ -927,18 +887,6 @@ namespace Smithers.API.Migrations
                     b.Navigation("Client");
 
                     b.Navigation("Debtor");
-                });
-
-            modelBuilder.Entity("Smithers.API.Models.InvoiceNote", b =>
-                {
-                    b.HasOne("Smithers.API.Models.Invoice", "Invoice")
-                        .WithMany()
-                        .HasForeignKey("InvoiceId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
-                        .HasConstraintName("fk_invoice_notes_invoices_invoice_id");
-
-                    b.Navigation("Invoice");
                 });
 
             modelBuilder.Entity("Smithers.API.Models.InvoiceOcrResult", b =>

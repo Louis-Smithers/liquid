@@ -10,13 +10,22 @@ public class OcrService : IOcrService
 {
     private readonly AppDbContext _context;
     private readonly HttpClient _httpClient;
+    private readonly IDocumentOcr _documentOcr;
+    private readonly ILlmFieldExtractor _llm;
     private readonly string _supabaseUrl;
     private readonly string _serviceRoleKey;
 
-    public OcrService(AppDbContext context, IConfiguration config, HttpClient httpClient)
+    public OcrService(
+        AppDbContext context,
+        IConfiguration config,
+        HttpClient httpClient,
+        IDocumentOcr documentOcr,
+        ILlmFieldExtractor llm)
     {
         _context = context;
         _httpClient = httpClient;
+        _documentOcr = documentOcr;
+        _llm = llm;
         _supabaseUrl = config["Supabase:Url"]?.TrimEnd('/') ?? "";
         _serviceRoleKey = config["Supabase:ServiceRoleKey"] ?? "";
     }
@@ -87,35 +96,68 @@ public class OcrService : IOcrService
     {
         var fileId = Guid.NewGuid();
         var path = $"{fileId}-{file.FileName}";
-        var documentPath = await UploadToSupabaseStorageAsync(file, "invoices-raw", path);
-        if (documentPath == null) documentPath = $"invoices-raw/{path}";
 
-        // --- ADOBE PDF EXTRACT SDK SCAFFOLDING ---
-        // To fully implement this, you would use Adobe.DocumentServices.PDFTools.
-        // var credentials = Credentials.ServiceAccountCredentialsBuilder()
-        //     .WithClientId("YOUR_CLIENT_ID")
-        //     .WithClientSecret("YOUR_CLIENT_SECRET")
-        //     .WithPrivateKey("PRIVATE_KEY")
-        //     .WithOrganizationId("ORG_ID")
-        //     .WithAccountId("ACCOUNT_ID")
-        //     .Build();
-        // var executionContext = ExecutionContext.Create(credentials);
-        // var extractPdfOperation = ExtractPDFOperation.CreateNew();
-        // ... set inputs and execute ...
-        // Parse the resulting structural JSON to map to OcrFieldDto.
-
-        // Scaffold custom parsing logic (Mocked for now)
-        var fields = new[]
+        // Read bytes once so we can both upload the raw file and run OCR on it.
+        byte[] bytes;
+        using (var ms = new MemoryStream())
         {
-            new OcrFieldDto("invoiceNumber", $"INV-{fileId.ToString().Substring(0, 6)}", 0.90m),
-            new OcrFieldDto("invoiceDate", DateTime.UtcNow.ToString("yyyy-MM-dd"), 0.95m),
-            new OcrFieldDto("amount", "0.00", 0.50m), // Low confidence to trigger UI
-            new OcrFieldDto("clientShortcode", "TEST", 0.85m),
-            new OcrFieldDto("vendorName", "Vendor", 0.80m)
-        };
+            await file.CopyToAsync(ms);
+            bytes = ms.ToArray();
+        }
+
+        var documentPath = await UploadToSupabaseStorageAsync(file, "invoices-raw", path)
+                           ?? $"invoices-raw/{path}";
+
+        OcrFieldDto[] fields;
+        try
+        {
+            // Tesseract (PDF or image) -> raw text -> LLM field extraction (vision-first, text fallback).
+            var ocr = _documentOcr.Run(bytes, file.ContentType, file.FileName);
+            var llm = await _llm.ExtractAsync(ocr.Text, ocr.PageImagePng);
+
+            fields = llm != null
+                ? new[]
+                {
+                    MakeField("invoiceNumber", llm.InvoiceNumber, ocr.Words),
+                    MakeField("invoiceDate", llm.InvoiceDate, ocr.Words),
+                    MakeField("amount", llm.Amount, ocr.Words),
+                    MakeField("poNumber", llm.PoNumber, ocr.Words),
+                    MakeField("vendorName", llm.VendorName, ocr.Words),
+                }
+                // LLM unavailable (no key / API down): return empty low-confidence fields so
+                // the reviewer fills them in manually rather than trusting fabricated values.
+                : EmptyFields();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"OCR scan failed for {file.FileName}: {ex.Message}");
+            fields = EmptyFields();
+        }
 
         return new OcrScanResultDto(documentPath, fields);
     }
+
+    // Recovers a bbox for the field by matching its extracted value back to a Tesseract word
+    // box, mirroring the bbox-recovery used by the batch pipeline (OcrWordMatch).
+    private static OcrFieldDto MakeField(string name, ExtractedField field, IReadOnlyList<OcrWord> words)
+    {
+        if (string.IsNullOrEmpty(field.Value))
+            return new OcrFieldDto(name, null, field.Confidence);
+
+        var wb = OcrWordMatch.FindWord(field.Value, words);
+        return wb == null
+            ? new OcrFieldDto(name, field.Value, field.Confidence)
+            : new OcrFieldDto(name, field.Value, field.Confidence, wb.X, wb.Y, wb.W, wb.H);
+    }
+
+    private static OcrFieldDto[] EmptyFields() => new[]
+    {
+        new OcrFieldDto("invoiceNumber", null, 0m),
+        new OcrFieldDto("invoiceDate", null, 0m),
+        new OcrFieldDto("amount", null, 0m),
+        new OcrFieldDto("poNumber", null, 0m),
+        new OcrFieldDto("vendorName", null, 0m),
+    };
 
     public async Task<(string? InvoiceId, Guid? NotificationSheetId)> ConfirmAndCreateInvoiceAsync(OcrConfirmDto dto, Guid reviewedBy)
     {
@@ -152,6 +194,7 @@ public class OcrService : IOcrService
             Amount = dto.Amount,
             Status = "Pending",
             DocumentPath = dto.RawDocumentPath,
+            Source = "OCR",
             CreatedTime = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow
         };

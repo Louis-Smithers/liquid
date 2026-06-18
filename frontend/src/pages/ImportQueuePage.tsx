@@ -208,7 +208,7 @@ function ResolveGroupModal({ rawClientName, items, clients, debtors, onClose, on
 
   return (
     <Dialog open onOpenChange={open => { if (!open) onClose() }}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-5xl">
         <DialogHeader>
           <DialogTitle>Resolve Group — {rawClientName}</DialogTitle>
         </DialogHeader>

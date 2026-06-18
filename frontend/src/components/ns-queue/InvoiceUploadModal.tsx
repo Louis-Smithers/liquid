@@ -5,6 +5,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
+import { CopyButton } from '@/components/ui/copy-button'
+import { PasteButton } from '@/components/ui/paste-button'
+import { DocumentPreview } from '@/components/ocr/DocumentPreview'
 import { api } from '@/lib/api'
 import { Upload, FileText, CheckCircle, XCircle, Loader2, AlertTriangle, Plus } from 'lucide-react'
 
@@ -17,6 +20,10 @@ interface OcrField {
   fieldName: string
   extractedValue: string | null
   confidence: number
+  bboxX?: number | null
+  bboxY?: number | null
+  bboxWidth?: number | null
+  bboxHeight?: number | null
 }
 
 interface ScanResult {
@@ -79,6 +86,7 @@ export function InvoiceUploadModal({
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [dragActive, setDragActive] = useState(false)
   const [pickedClient, setPickedClient] = useState('')
+  const [activeField, setActiveField] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const clientShortcode = initialClientShortcode || pickedClient
@@ -89,6 +97,7 @@ export function InvoiceUploadModal({
     setFiles([])
     setSelectedId(null)
     setPickedClient('')
+    setActiveField(null)
     onClose()
   }
 
@@ -205,7 +214,7 @@ export function InvoiceUploadModal({
 
   return (
     <Dialog open={open} onOpenChange={o => !o && handleClose()}>
-      <DialogContent className="max-w-5xl w-full h-[80vh] flex flex-col p-0 gap-0 overflow-hidden">
+      <DialogContent className="max-w-7xl w-full h-[80vh] flex flex-col p-0 gap-0 overflow-hidden">
         <DialogHeader className="px-6 py-4 border-b bg-white shrink-0">
           <DialogTitle className="text-lg font-semibold">Upload Invoices &amp; Add to Queue</DialogTitle>
           <DialogDescription asChild>
@@ -280,7 +289,12 @@ export function InvoiceUploadModal({
               {files.map(f => (
                 <button
                   key={f.id}
-                  onClick={() => f.status === 'review' || f.status === 'error' ? setSelectedId(f.id) : undefined}
+                  onClick={() => {
+                    if (f.status === 'review' || f.status === 'error') {
+                      setSelectedId(f.id)
+                      setActiveField(null)
+                    }
+                  }}
                   className={`w-full text-left rounded-md px-3 py-2 text-xs transition-colors flex items-start gap-2 ${
                     selectedId === f.id
                       ? 'bg-[#EEF2FF] border border-[#C7D2FE]'
@@ -377,14 +391,28 @@ export function InvoiceUploadModal({
                 <Button size="sm" variant="outline" onClick={() => scanFile(selectedFile)}>Retry</Button>
               </div>
             ) : selectedFile.formData && selectedFile.scanResult ? (
-              <ReviewForm
-                file={selectedFile}
-                debtors={debtors}
-                clientShortcode={clientShortcode}
-                onChange={patch => updateForm(selectedFile.id, patch)}
-                onConfirm={() => confirmFile(selectedFile)}
-                confirming={selectedFile.status === 'confirming'}
-              />
+              <div className="flex h-full">
+                <div className="flex-1 min-w-0 border-r p-4">
+                  <DocumentPreview
+                    fileUrl={`/api/ocr/scan/file?path=${encodeURIComponent(selectedFile.scanResult.rawDocumentPath)}`}
+                    fields={selectedFile.scanResult.fields}
+                    activeField={activeField}
+                    onFieldClick={setActiveField}
+                  />
+                </div>
+                <div className="w-[420px] shrink-0 overflow-y-auto">
+                  <ReviewForm
+                    file={selectedFile}
+                    debtors={debtors}
+                    clientShortcode={clientShortcode}
+                    onChange={patch => updateForm(selectedFile.id, patch)}
+                    onConfirm={() => confirmFile(selectedFile)}
+                    confirming={selectedFile.status === 'confirming'}
+                    activeField={activeField}
+                    onFieldFocus={setActiveField}
+                  />
+                </div>
+              </div>
             ) : null}
           </div>
         </div>
@@ -400,6 +428,8 @@ function ReviewForm({
   onChange,
   onConfirm,
   confirming,
+  activeField,
+  onFieldFocus,
 }: {
   file: UploadedFile
   debtors: Debtor[]
@@ -407,6 +437,8 @@ function ReviewForm({
   onChange: (patch: Partial<ConfirmForm>) => void
   onConfirm: () => void
   confirming: boolean
+  activeField: string | null
+  onFieldFocus: (fieldName: string) => void
 }) {
   const form = file.formData!
   const scan = file.scanResult!
@@ -433,12 +465,17 @@ function ReviewForm({
             </span>
           )}
         </div>
-        <Input
-          id="inv-number"
-          value={form.invoiceNumber}
-          onChange={e => onChange({ invoiceNumber: e.target.value })}
-          className={isLow('invoiceNumber') ? 'border-amber-400 bg-amber-50' : ''}
-        />
+        <div className="flex items-center gap-1">
+          <Input
+            id="inv-number"
+            value={form.invoiceNumber}
+            onChange={e => onChange({ invoiceNumber: e.target.value })}
+            onFocus={() => onFieldFocus('invoiceNumber')}
+            className={`${isLow('invoiceNumber') ? 'border-amber-400 bg-amber-50' : ''} ${activeField === 'invoiceNumber' ? 'ring-1 ring-[#4648D4]' : ''}`}
+          />
+          <PasteButton onPaste={v => onChange({ invoiceNumber: v })} />
+          <CopyButton value={form.invoiceNumber} />
+        </div>
       </div>
 
       {/* Date + Amount */}
@@ -450,13 +487,17 @@ function ReviewForm({
             </Label>
             {isLow('invoiceDate') && <AlertTriangle className="h-3 w-3 text-amber-500" />}
           </div>
-          <Input
-            id="inv-date"
-            type="date"
-            value={form.invoiceDate}
-            onChange={e => onChange({ invoiceDate: e.target.value })}
-            className={isLow('invoiceDate') ? 'border-amber-400 bg-amber-50' : ''}
-          />
+          <div className="flex items-center gap-1">
+            <Input
+              id="inv-date"
+              type="date"
+              value={form.invoiceDate}
+              onChange={e => onChange({ invoiceDate: e.target.value })}
+              onFocus={() => onFieldFocus('invoiceDate')}
+              className={`${isLow('invoiceDate') ? 'border-amber-400 bg-amber-50' : ''} ${activeField === 'invoiceDate' ? 'ring-1 ring-[#4648D4]' : ''}`}
+            />
+            <CopyButton value={form.invoiceDate} />
+          </div>
         </div>
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
@@ -465,14 +506,19 @@ function ReviewForm({
             </Label>
             {isLow('amount') && <AlertTriangle className="h-3 w-3 text-amber-500" />}
           </div>
-          <Input
-            id="inv-amount"
-            type="number"
-            step="0.01"
-            value={form.amount}
-            onChange={e => onChange({ amount: e.target.value })}
-            className={isLow('amount') ? 'border-amber-400 bg-amber-50' : ''}
-          />
+          <div className="flex items-center gap-1">
+            <Input
+              id="inv-amount"
+              type="number"
+              step="0.01"
+              value={form.amount}
+              onChange={e => onChange({ amount: e.target.value })}
+              onFocus={() => onFieldFocus('amount')}
+              className={`${isLow('amount') ? 'border-amber-400 bg-amber-50' : ''} ${activeField === 'amount' ? 'ring-1 ring-[#4648D4]' : ''}`}
+            />
+            <PasteButton onPaste={v => onChange({ amount: v })} />
+            <CopyButton value={form.amount} />
+          </div>
         </div>
       </div>
 
@@ -495,12 +541,17 @@ function ReviewForm({
             <Label htmlFor="new-debtor" className={isLow('vendorName') ? 'text-amber-600 font-semibold' : ''}>
               New Debtor Name
             </Label>
-            <Input
-              id="new-debtor"
-              value={form.newDebtorName}
-              onChange={e => onChange({ newDebtorName: e.target.value })}
-              className={isLow('vendorName') ? 'border-amber-400 bg-amber-50' : ''}
-            />
+            <div className="flex items-center gap-1">
+              <Input
+                id="new-debtor"
+                value={form.newDebtorName}
+                onChange={e => onChange({ newDebtorName: e.target.value })}
+                onFocus={() => onFieldFocus('vendorName')}
+                className={`${isLow('vendorName') ? 'border-amber-400 bg-amber-50' : ''} ${activeField === 'vendorName' ? 'ring-1 ring-[#4648D4]' : ''}`}
+              />
+              <PasteButton onPaste={v => onChange({ newDebtorName: v })} />
+              <CopyButton value={form.newDebtorName} />
+            </div>
           </div>
         )}
       </div>

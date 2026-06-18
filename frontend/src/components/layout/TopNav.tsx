@@ -22,7 +22,6 @@ export function TopNav() {
     { name: 'Loans', path: '/loans' },
     { name: 'Scan Invoice', path: '/scan' },
     { name: 'Import Queue', path: '/queue' },
-    { name: 'Aging Report', path: '/aging' },
     ...(role === 'admin' ? [{ name: 'Admin', path: '/admin' }] : []),
   ]
 

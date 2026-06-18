@@ -24,6 +24,7 @@ export function AddClientModal({ onClientAdded }: AddClientModalProps) {
   const [loading, setLoading] = useState(false)
   const [formData, setFormData] = useState({
     shortcode: '',
+    code: '',
     cadenceName: '',
     active: true,
     dnc: false,
@@ -42,6 +43,7 @@ export function AddClientModal({ onClientAdded }: AddClientModalProps) {
     try {
       const payload = {
         ...formData,
+        code: formData.code || null,
         email: formData.email || null,
         phone: formData.phone || null,
         city: formData.city || null,
@@ -53,7 +55,7 @@ export function AddClientModal({ onClientAdded }: AddClientModalProps) {
       const response = await api.post<Client>('/api/clients', payload)
       onClientAdded(response.data)
       setOpen(false)
-      setFormData({ shortcode: '', cadenceName: '', active: true, dnc: false, email: '', phone: '', city: '', province: '', postalCode: '', language: '', notes: '' })
+      setFormData({ shortcode: '', code: '', cadenceName: '', active: true, dnc: false, email: '', phone: '', city: '', province: '', postalCode: '', language: '', notes: '' })
     } catch (error) {
       console.error("Failed to add client:", error)
     } finally {
@@ -78,14 +80,18 @@ export function AddClientModal({ onClientAdded }: AddClientModalProps) {
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="shortcode" className="text-right">Code *</Label>
-              <Input id="shortcode" required value={formData.shortcode} onChange={(e) => setFormData({ ...formData, shortcode: e.target.value.toUpperCase() })} className="col-span-3" placeholder="e.g. ACME" />
+              <Label htmlFor="shortcode" className="text-right">Account # *</Label>
+              <Input id="shortcode" required value={formData.shortcode} onChange={(e) => setFormData({ ...formData, shortcode: e.target.value })} className="col-span-3" placeholder="e.g. 5545" />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="code" className="text-right">Alpha Code</Label>
+              <Input id="code" value={formData.code} onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase() })} className="col-span-3" placeholder="e.g. SAF" />
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="cadenceName" className="text-right">Name *</Label>
               <Input id="cadenceName" required value={formData.cadenceName} onChange={(e) => setFormData({ ...formData, cadenceName: e.target.value })} className="col-span-3" placeholder="e.g. ACME Corp" />
             </div>
-            
+
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="email" className="text-right">Email</Label>
               <Input id="email" type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} className="col-span-3" placeholder="you@example.com" />

@@ -9,4 +9,5 @@ public interface IOcrPipelineService
     Task<UploadBatchDto> GetBatchAsync(Guid batchId, Guid userId);
     Task<ConfirmResultDto> ConfirmDocumentAsync(Guid batchId, Guid docId, ConfirmDocDto dto, Guid userId);
     Task<bool> DiscardBatchAsync(Guid batchId, Guid userId);
+    Task<(byte[] Bytes, string FileName)?> GetDocumentFileAsync(Guid batchId, Guid docId, Guid userId);
 }

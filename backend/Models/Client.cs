@@ -11,7 +11,11 @@ public class Client
     [Required]
     [MaxLength(50)]
     public string Shortcode { get; set; } = null!;
-    
+
+    /// <summary>Short alpha code staff use to identify the client (e.g. "SAF"). Manually assigned, optional.</summary>
+    [MaxLength(20)]
+    public string? Code { get; set; }
+
     public string? CadenceName { get; set; }
     
     public bool Active { get; set; } = true;

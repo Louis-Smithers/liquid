@@ -34,6 +34,10 @@ builder.Services.AddScoped<INotificationSheetService, NotificationSheetService>(
 builder.Services.AddScoped<INsPdfService, NsPdfService>();
 builder.Services.AddScoped<INsIntakeService, NsIntakeService>();
 builder.Services.AddScoped<IImportQueueService, ImportQueueService>();
+builder.Services.AddScoped<IDocumentOcr, DocumentOcrService>();
+builder.Services.AddHttpClient<LlmFieldExtractor>();
+builder.Services.AddHttpClient<OpenAiVisionFieldExtractor>();
+builder.Services.AddScoped<ILlmFieldExtractor, CompositeFieldExtractor>();
 builder.Services.AddHttpClient<IOcrService, OcrService>();
 builder.Services.AddHttpClient<ISupabaseStorage, SupabaseStorageService>();
 builder.Services.AddScoped<IOcrPipelineService, OcrPipelineService>();
