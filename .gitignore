@@ -39,7 +39,7 @@ Thumbs.db
 .agents/
 
 # ── Invoice PDFs (real client documents — never commit) ───────────────────
-invoices/
+/invoices/
 RetoolUI/
 Import list/
 mcp.json
