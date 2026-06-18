@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -25,17 +25,23 @@ const fmt = (v: number) =>
 
 const pct = (v: number) => (v * 100).toFixed(2) + '%'
 
+const today = () => new Date().toISOString().slice(0, 10)
+
 // Inline editable cell — click to edit, Enter/Escape to confirm/cancel
 function EditableCell({
   value,
   onSave,
   type = 'number',
   className = '',
+  min,
+  max,
 }: {
   value: string | number | null
   onSave: (val: string) => Promise<void>
   type?: string
   className?: string
+  min?: string
+  max?: string
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(String(value ?? ''))
@@ -77,6 +83,8 @@ function EditableCell({
         onChange={e => setDraft(e.target.value)}
         onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') cancel() }}
         className="h-7 w-28 text-xs px-1"
+        min={min}
+        max={max}
       />
       <button onClick={commit} disabled={saving} className="text-green-600 hover:text-green-700">
         <Check className="h-3.5 w-3.5" />
@@ -92,7 +100,7 @@ export function LoanDrawer({ loanId, onClose }: LoanDrawerProps) {
   const [data, setData] = useState<LoanTableDto | null>(null)
   const [loading, setLoading] = useState(true)
   const [addPaymentOpen, setAddPaymentOpen] = useState(false)
-  const [paymentForm, setPaymentForm] = useState({ date: new Date().toISOString().slice(0, 10), amount: '', notes: '' })
+  const [paymentForm, setPaymentForm] = useState({ date: today(), amount: '', notes: '' })
   const [addingSaving, setAddingSaving] = useState(false)
   const [downloadingPdf, setDownloadingPdf] = useState(false)
   const [deletingLoan, setDeletingLoan] = useState(false)
@@ -312,9 +320,11 @@ export function LoanDrawer({ loanId, onClose }: LoanDrawerProps) {
                         <TableBody>
                           {rows.map((row, i) => (
                             <LoanTableRow
-                              key={row.paymentId ?? 'start'}
+                              key={row.paymentId ?? `accrual-${row.date}`}
                               row={row}
                               isStart={i === 0}
+                              minDate={loan.startDate}
+                              maxDate={today()}
                               onPatchPayment={row.paymentId ? (patch) => patchPayment(row.paymentId!, patch) : undefined}
                               onDeletePayment={row.paymentId ? () => deletePayment(row.paymentId!) : undefined}
                             />
@@ -327,25 +337,30 @@ export function LoanDrawer({ loanId, onClose }: LoanDrawerProps) {
                             </TableRow>
                           )}
                         </TableBody>
+                        {rows.length > 1 && (
+                          <TableFooter>
+                            <TableRow className="border-t-2 border-slate-300 bg-slate-50 hover:bg-slate-50">
+                              <TableCell colSpan={2} className="text-xs font-semibold text-[#464554] py-2 pl-4">
+                                TOTALS
+                              </TableCell>
+                              <TableCell />
+                              <TableCell className="text-xs font-semibold text-right text-green-700 py-2">
+                                {fmt(rows.reduce((s, r) => s + r.paymentReceived, 0))}
+                              </TableCell>
+                              <TableCell className="text-xs font-semibold text-right text-orange-600 py-2">
+                                ({fmt(data.totalInterestAccrued)})
+                              </TableCell>
+                              <TableCell className="text-xs font-semibold text-right py-2">
+                                {fmt(rows.reduce((s, r) => s + r.principal, 0))}
+                              </TableCell>
+                              <TableCell className="text-xs font-semibold text-right text-red-600 py-2">
+                                {fmt(data.currentBalance)}
+                              </TableCell>
+                              <TableCell />
+                            </TableRow>
+                          </TableFooter>
+                        )}
                       </Table>
-
-                      {/* Totals footer */}
-                      {rows.length > 1 && (
-                        <div className="border-t-2 border-slate-300 bg-slate-50 px-4 py-2 grid grid-cols-7 gap-2 text-xs font-semibold">
-                          <span className="col-span-2 text-[#464554]">TOTALS</span>
-                          <span />
-                          <span className="text-right text-green-700">
-                            {fmt(rows.reduce((s, r) => s + r.paymentReceived, 0))}
-                          </span>
-                          <span className="text-right text-orange-600">
-                            ({fmt(data.totalInterestAccrued)})
-                          </span>
-                          <span className="text-right">
-                            {fmt(rows.reduce((s, r) => s + r.principal, 0))}
-                          </span>
-                          <span className="text-right text-red-600">{fmt(data.currentBalance)}</span>
-                        </div>
-                      )}
                     </div>
                   </TabsContent>
 
@@ -440,6 +455,8 @@ export function LoanDrawer({ loanId, onClose }: LoanDrawerProps) {
                 type="date"
                 value={paymentForm.date}
                 onChange={e => setPaymentForm(p => ({ ...p, date: e.target.value }))}
+                min={loan?.startDate}
+                max={today()}
               />
             </div>
             <div className="space-y-1.5">
@@ -494,26 +511,35 @@ function DetailRow({ label, value }: { label: string; value: string | null | und
 function LoanTableRow({
   row,
   isStart,
+  minDate,
+  maxDate,
   onPatchPayment,
   onDeletePayment,
 }: {
   row: LoanTableRowDto
   isStart: boolean
+  minDate: string
+  maxDate: string
   onPatchPayment?: (patch: object) => Promise<void>
   onDeletePayment?: () => void
 }) {
+  const isAccrualOnly = !isStart && !row.paymentId
   return (
-    <TableRow className={`h-10 border-b ${row.isOverride ? 'bg-amber-50/40' : ''}`}>
+    <TableRow className={`h-10 border-b ${row.isOverride ? 'bg-amber-50/40' : ''} ${isAccrualOnly ? 'bg-slate-50/60' : ''}`}>
       {/* Date */}
       <TableCell className="text-xs py-1 pl-4 font-medium">
-        {onPatchPayment ? (
+        {isStart ? (
+          <span>{row.date} <span className="text-muted-foreground text-[10px]">(Start)</span></span>
+        ) : onPatchPayment ? (
           <EditableCell
             value={row.date}
             type="date"
             onSave={v => onPatchPayment({ paymentDate: v })}
+            min={minDate}
+            max={maxDate}
           />
         ) : (
-          <span>{row.date} <span className="text-muted-foreground text-[10px]">(Start)</span></span>
+          <span>{row.date}</span>
         )}
       </TableCell>
 
@@ -529,7 +555,7 @@ function LoanTableRow({
 
       {/* Payment Received B */}
       <TableCell className="text-xs py-1 text-right tabular-nums">
-        {isStart ? '—' : onPatchPayment ? (
+        {isStart || (!row.paymentId && row.paymentReceived === 0) ? '—' : onPatchPayment ? (
           <EditableCell
             value={row.paymentReceived.toFixed(2)}
             onSave={v => onPatchPayment({ paymentAmount: parseFloat(v) })}

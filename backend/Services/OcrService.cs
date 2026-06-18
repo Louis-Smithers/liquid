@@ -37,7 +37,7 @@ public class OcrService : IOcrService
         var requestUrl = $"{_supabaseUrl}/storage/v1/object/{bucket}/{path}";
         var request = new HttpRequestMessage(HttpMethod.Post, requestUrl);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _serviceRoleKey);
-        
+
         using var content = new StreamContent(file.OpenReadStream());
         if (file.ContentType != null)
         {
@@ -50,7 +50,32 @@ public class OcrService : IOcrService
         {
             return $"{bucket}/{path}";
         }
-        
+
+        var error = await response.Content.ReadAsStringAsync();
+        Console.WriteLine($"Supabase Storage Error: {error}");
+        return null;
+    }
+
+    // Bytes-based variant for content we generate ourselves (e.g. the rasterized PDF-page-1
+    // preview PNG) rather than receiving as an IFormFile.
+    private async Task<string?> UploadBytesToSupabaseStorageAsync(byte[] bytes, string bucket, string path, string contentType)
+    {
+        if (string.IsNullOrEmpty(_supabaseUrl) || string.IsNullOrEmpty(_serviceRoleKey)) return null;
+
+        var requestUrl = $"{_supabaseUrl}/storage/v1/object/{bucket}/{path}";
+        var request = new HttpRequestMessage(HttpMethod.Post, requestUrl);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _serviceRoleKey);
+
+        using var content = new ByteArrayContent(bytes);
+        content.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+        request.Content = content;
+
+        var response = await _httpClient.SendAsync(request);
+        if (response.IsSuccessStatusCode)
+        {
+            return $"{bucket}/{path}";
+        }
+
         var error = await response.Content.ReadAsStringAsync();
         Console.WriteLine($"Supabase Storage Error: {error}");
         return null;
@@ -109,6 +134,7 @@ public class OcrService : IOcrService
                            ?? $"invoices-raw/{path}";
 
         OcrFieldDto[] fields;
+        string? previewPath = null;
         try
         {
             // Tesseract (PDF or image) -> raw text -> LLM field extraction (vision-first, text fallback).
@@ -127,6 +153,12 @@ public class OcrService : IOcrService
                 // LLM unavailable (no key / API down): return empty low-confidence fields so
                 // the reviewer fills them in manually rather than trusting fabricated values.
                 : EmptyFields();
+
+            // Cache the already-rasterized page-1 PNG as a lightweight preview so the review UI
+            // doesn't have to download/render the full original PDF. The original stays at
+            // documentPath (used as Invoice.DocumentPath on confirm, and by the Intake PDF merge).
+            var previewFileName = $"{fileId}-preview.png";
+            previewPath = await UploadBytesToSupabaseStorageAsync(ocr.PageImagePng, "invoices-raw", previewFileName, "image/png");
         }
         catch (Exception ex)
         {
@@ -134,7 +166,7 @@ public class OcrService : IOcrService
             fields = EmptyFields();
         }
 
-        return new OcrScanResultDto(documentPath, fields);
+        return new OcrScanResultDto(documentPath, previewPath ?? documentPath, fields);
     }
 
     // Recovers a bbox for the field by matching its extracted value back to a Tesseract word

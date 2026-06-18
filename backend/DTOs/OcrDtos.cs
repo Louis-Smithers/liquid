@@ -9,7 +9,7 @@ public record OcrFieldDto(
     decimal? BboxWidth = null,
     decimal? BboxHeight = null
 );
-public record OcrScanResultDto(string RawDocumentPath, OcrFieldDto[] Fields);
+public record OcrScanResultDto(string RawDocumentPath, string? PreviewPath, OcrFieldDto[] Fields);
 public record OcrConfirmDto(string RawDocumentPath, string InvoiceNumber, DateOnly InvoiceDate, decimal Amount, string ClientShortcode, Guid? DebtorId, string? NewDebtorName, bool AddToNsQueue, string? Notes);
 
 public record OcrResultDto(

@@ -42,13 +42,20 @@ public class InvoiceService : IInvoiceService
         isProcessed
     );
 
+    // An invoice is "Processed" once it's on a Notification Sheet that has actually been
+    // Submitted — sitting in a Draft queue doesn't count. Import-sourced (DebAging report)
+    // invoices are always Processed regardless of NS status; only OCR-scanned invoices can be
+    // genuinely Unprocessed.
     private async Task<HashSet<string>> GetProcessedInvoiceIdsAsync(IEnumerable<string> invoiceIds) =>
         (await _context.NotificationSheetItems
-            .Where(i => invoiceIds.Contains(i.InvoiceId))
+            .Where(i => invoiceIds.Contains(i.InvoiceId) && i.NotificationSheet.Status == "Submitted")
             .Select(i => i.InvoiceId)
             .Distinct()
             .ToListAsync())
         .ToHashSet();
+
+    private static bool IsProcessed(Invoice p, HashSet<string> submittedIds) =>
+        p.Source == "Import" || submittedIds.Contains(p.InvoiceId);
 
     private static InvoiceNoteDto ToNoteDto(InvoiceNote n) => new(n.Id, n.InvoiceId, n.Text, n.CreatedBy, n.CreatedAt);
 
@@ -88,8 +95,8 @@ public class InvoiceService : IInvoiceService
             .Take(pageSize + 1)
             .ToListAsync();
 
-        var processedIds = await GetProcessedInvoiceIdsAsync(entities.Select(p => p.InvoiceId));
-        var items = entities.Select(p => ToDto(p, processedIds.Contains(p.InvoiceId))).ToList();
+        var submittedIds = await GetProcessedInvoiceIdsAsync(entities.Select(p => p.InvoiceId));
+        var items = entities.Select(p => ToDto(p, IsProcessed(p, submittedIds))).ToList();
 
         string? nextCursorTime = null;
         string? nextCursorId = null;
@@ -114,8 +121,8 @@ public class InvoiceService : IInvoiceService
             .OrderByDescending(p => p.Date)
             .ToListAsync();
 
-        var processedIds = await GetProcessedInvoiceIdsAsync(entities.Select(p => p.InvoiceId));
-        return entities.Select(p => ToDto(p, processedIds.Contains(p.InvoiceId)));
+        var submittedIds = await GetProcessedInvoiceIdsAsync(entities.Select(p => p.InvoiceId));
+        return entities.Select(p => ToDto(p, IsProcessed(p, submittedIds)));
     }
 
     public async Task<IEnumerable<InvoiceDto>> GetByDebtorAsync(Guid debtorId)
@@ -131,8 +138,8 @@ public class InvoiceService : IInvoiceService
             .OrderByDescending(p => p.Date)
             .ToListAsync();
 
-        var processedIds = await GetProcessedInvoiceIdsAsync(entities.Select(p => p.InvoiceId));
-        return entities.Select(p => ToDto(p, processedIds.Contains(p.InvoiceId)));
+        var submittedIds = await GetProcessedInvoiceIdsAsync(entities.Select(p => p.InvoiceId));
+        return entities.Select(p => ToDto(p, IsProcessed(p, submittedIds)));
     }
 
     public async Task<InvoiceDto?> GetByIdAsync(string invoiceId)
@@ -147,8 +154,9 @@ public class InvoiceService : IInvoiceService
         if (_currentUser.IsClient && p.LiquidClient != _currentUser.ClientShortcode)
             return null;
 
-        var isProcessed = await _context.NotificationSheetItems.AnyAsync(i => i.InvoiceId == invoiceId);
-        return ToDto(p, isProcessed);
+        var isSubmitted = await _context.NotificationSheetItems
+            .AnyAsync(i => i.InvoiceId == invoiceId && i.NotificationSheet.Status == "Submitted");
+        return ToDto(p, p.Source == "Import" || isSubmitted);
     }
 
     public async Task<bool> UpdateStatusAsync(string invoiceId, string status)

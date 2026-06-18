@@ -294,6 +294,8 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
   const [debtorSortDir, setDebtorSortDir] = useState<SortDirection>(null)
   const [invoiceSortCol, setInvoiceSortCol] = useState<string | null>(null)
   const [invoiceSortDir, setInvoiceSortDir] = useState<SortDirection>(null)
+  const [unprocessedSortCol, setUnprocessedSortCol] = useState<string | null>(null)
+  const [unprocessedSortDir, setUnprocessedSortDir] = useState<SortDirection>(null)
 
   // Expandable debtor rows
   const [expandedDebtor, setExpandedDebtor] = useState<string | null>(null)
@@ -314,6 +316,7 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
 
   // Unprocessed/Processed split
   const [unprocessedExpanded, setUnprocessedExpanded] = useState(false)
+  const [processedExpanded, setProcessedExpanded] = useState(true)
   const [unprocessedSelected, setUnprocessedSelected] = useState<string[]>([])
   const [addingToQueue, setAddingToQueue] = useState(false)
   const [bulkNoteDraft, setBulkNoteDraft] = useState('')
@@ -434,6 +437,7 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
 
   const handleDebtorSort = (col: string, dir: SortDirection) => { setDebtorSortCol(col); setDebtorSortDir(dir) }
   const handleInvoiceSort = (col: string, dir: SortDirection) => { setInvoiceSortCol(col); setInvoiceSortDir(dir) }
+  const handleUnprocessedSort = (col: string, dir: SortDirection) => { setUnprocessedSortCol(col); setUnprocessedSortDir(dir) }
 
   const toggleDebtorExpand = async (debtorId: string) => {
     if (expandedDebtor === debtorId) {
@@ -491,22 +495,32 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
     [filteredInvoices]
   )
 
-  const sortedInvoices = useMemo(() => {
-    const sorted = [...processedInvoices]
-    if (!invoiceSortCol || !invoiceSortDir) return sorted
+  const sortInvoices = (list: Invoice[], col: string | null, dir: SortDirection) => {
+    const sorted = [...list]
+    if (!col || !dir) return sorted
     sorted.sort((a, b) => {
       let aVal: any, bVal: any
-      if (invoiceSortCol === '_age') { aVal = computeAge(a.date); bVal = computeAge(b.date) }
-      else if (invoiceSortCol === 'flagged') { aVal = a.flagged ? 1 : 0; bVal = b.flagged ? 1 : 0 }
-      else { aVal = a[invoiceSortCol as keyof Invoice]; bVal = b[invoiceSortCol as keyof Invoice] }
+      if (col === '_age') { aVal = computeAge(a.date); bVal = computeAge(b.date) }
+      else if (col === 'flagged') { aVal = a.flagged ? 1 : 0; bVal = b.flagged ? 1 : 0 }
+      else { aVal = a[col as keyof Invoice]; bVal = b[col as keyof Invoice] }
       if (aVal == null) aVal = ""; if (bVal == null) bVal = ""
       if (typeof aVal === 'string') { aVal = aVal.toLowerCase(); bVal = bVal.toLowerCase() }
-      if (aVal < bVal) return invoiceSortDir === 'asc' ? -1 : 1
-      if (aVal > bVal) return invoiceSortDir === 'asc' ? 1 : -1
+      if (aVal < bVal) return dir === 'asc' ? -1 : 1
+      if (aVal > bVal) return dir === 'asc' ? 1 : -1
       return 0
     })
     return sorted
-  }, [processedInvoices, invoiceSortCol, invoiceSortDir])
+  }
+
+  const sortedInvoices = useMemo(
+    () => sortInvoices(processedInvoices, invoiceSortCol, invoiceSortDir),
+    [processedInvoices, invoiceSortCol, invoiceSortDir]
+  )
+
+  const sortedUnprocessedInvoices = useMemo(
+    () => sortInvoices(unprocessedInvoices, unprocessedSortCol, unprocessedSortDir),
+    [unprocessedInvoices, unprocessedSortCol, unprocessedSortDir]
+  )
 
   return (
     <>
@@ -824,11 +838,20 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
                             </button>
                             {unprocessedExpanded && (
                               <div className="border-t border-slate-200">
-                                <div className="flex items-center justify-between px-4 py-2 bg-slate-50 border-b gap-2">
-                                  <span className="text-xs text-muted-foreground">
-                                    {unprocessedSelected.length > 0 ? `${unprocessedSelected.length} selected` : 'Not yet added to a Notification Sheet'}
-                                  </span>
+                                <div className="flex flex-row justify-between items-center px-4 py-2 bg-slate-50 border-b gap-2">
+                                  <div className="relative w-48">
+                                    <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                                    <Input
+                                      placeholder="Search..."
+                                      className="pl-7 h-8 text-xs bg-white"
+                                      value={invoiceSearch}
+                                      onChange={e => setInvoiceSearch(e.target.value)}
+                                    />
+                                  </div>
                                   <div className="flex items-center gap-2">
+                                    {unprocessedSelected.length > 0 && (
+                                      <span className="text-xs text-muted-foreground">{unprocessedSelected.length} selected</span>
+                                    )}
                                     <Button
                                       size="sm"
                                       variant="outline"
@@ -845,9 +868,9 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
                                     </Link>
                                   </div>
                                 </div>
-                                <div className="overflow-auto max-h-[320px]">
+                                <div className="overflow-auto max-h-[480px]">
                                   <Table>
-                                    <TableHeader className="bg-slate-50 sticky top-0 z-10 border-b">
+                                    <TableHeader className="bg-slate-50 sticky top-0 shadow-sm z-10 border-b">
                                       <TableRow>
                                         <TableHead className="w-10 pl-4">
                                           <Checkbox
@@ -855,22 +878,25 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
                                             onCheckedChange={(checked) => setUnprocessedSelected(checked ? unprocessedInvoices.map(i => i.invoiceId) : [])}
                                           />
                                         </TableHead>
-                                        <TableHead className="h-9 text-[11px]">INVOICE</TableHead>
-                                        <TableHead className="h-9 text-[11px]">DATE</TableHead>
-                                        <TableHead className="h-9 text-[11px] text-right">AMOUNT</TableHead>
-                                        <TableHead className="h-9 text-[11px]">DEBTOR</TableHead>
-                                        <TableHead className="h-9 text-[11px]">SOURCE</TableHead>
+                                        <SortableTableHead label="INVOICE" columnKey="originalInvoice" currentSortColumn={unprocessedSortCol} currentSortDirection={unprocessedSortDir} onSort={handleUnprocessedSort} className="h-9 text-[11px]" />
+                                        <SortableTableHead label="DATE" columnKey="date" currentSortColumn={unprocessedSortCol} currentSortDirection={unprocessedSortDir} onSort={handleUnprocessedSort} className="h-9 text-[11px]" />
+                                        <SortableTableHead label="AGE" columnKey="_age" currentSortColumn={unprocessedSortCol} currentSortDirection={unprocessedSortDir} onSort={handleUnprocessedSort} className="h-9 text-[11px] text-right" />
+                                        <SortableTableHead label="AMOUNT" columnKey="amount" currentSortColumn={unprocessedSortCol} currentSortDirection={unprocessedSortDir} onSort={handleUnprocessedSort} className="h-9 text-[11px] text-right" />
+                                        <SortableTableHead label="DEBTOR" columnKey="debtorName" currentSortColumn={unprocessedSortCol} currentSortDirection={unprocessedSortDir} onSort={handleUnprocessedSort} className="h-9 text-[11px]" />
+                                        <SortableTableHead label="STATUS" columnKey="status" currentSortColumn={unprocessedSortCol} currentSortDirection={unprocessedSortDir} onSort={handleUnprocessedSort} className="h-9 text-[11px]" />
+                                        <SortableTableHead label="FLAG" columnKey="flagged" currentSortColumn={unprocessedSortCol} currentSortDirection={unprocessedSortDir} onSort={handleUnprocessedSort} className="h-9 text-[11px] text-center" />
+                                        <TableHead className="h-9 text-[11px] w-16 text-center">NOTES</TableHead>
                                       </TableRow>
                                     </TableHeader>
                                     <TableBody>
-                                      {unprocessedInvoices.length === 0 && (
+                                      {sortedUnprocessedInvoices.length === 0 && (
                                         <TableRow>
-                                          <TableCell colSpan={6} className="text-center py-8 text-sm text-muted-foreground">
-                                            No unprocessed invoices.
+                                          <TableCell colSpan={9} className="text-center py-10 text-sm text-muted-foreground">
+                                            {invoiceSearch ? 'No invoices match your search.' : 'No unprocessed invoices.'}
                                           </TableCell>
                                         </TableRow>
                                       )}
-                                      {unprocessedInvoices.map(inv => (
+                                      {sortedUnprocessedInvoices.map(inv => (
                                         <TableRow key={inv.invoiceId} className="h-10 border-b">
                                           <TableCell className="pl-4 py-1">
                                             <Checkbox checked={unprocessedSelected.includes(inv.invoiceId)} onCheckedChange={() => toggleUnprocessedInvoice(inv.invoiceId)} />
@@ -885,9 +911,28 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
                                             </button>
                                           </TableCell>
                                           <TableCell className="text-muted-foreground py-1 text-xs">{inv.date}</TableCell>
+                                          <TableCell className="text-right py-1 text-xs text-muted-foreground tabular-nums">{computeAge(inv.date)}d</TableCell>
                                           <TableCell className="text-right font-semibold py-1 text-xs tabular-nums">${inv.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
                                           <TableCell className="py-1 text-xs">{inv.debtorName || '-'}</TableCell>
-                                          <TableCell className="py-1 text-xs text-muted-foreground">{inv.source}</TableCell>
+                                          <TableCell className="py-1">
+                                            <Badge variant="outline" className={`text-[10px] h-5 px-1.5 border-transparent font-semibold ${
+                                              inv.status === 'Pre-Verified' ? 'bg-[#DCFCE7] text-[#15803D]' :
+                                              inv.status === 'Unverified' ? 'bg-[#FEF9C3] text-[#A16207]' :
+                                              inv.status === 'Paid' ? 'bg-slate-800 text-white' :
+                                              inv.status === 'OA' ? 'bg-blue-100 text-blue-800' :
+                                              'bg-[#FEE2E2] text-[#B91C1C]'
+                                            }`}>
+                                              {inv.status}
+                                            </Badge>
+                                          </TableCell>
+                                          <TableCell className="text-center py-1">
+                                            {inv.flagged && (
+                                              <span className="inline-flex items-center justify-center w-5 h-5 bg-red-100 rounded-full text-red-700 text-[10px] font-bold" title={inv.flagReason}>!</span>
+                                            )}
+                                          </TableCell>
+                                          <TableCell className="py-1 text-center pr-4">
+                                            <InvoiceNotesPopover invoiceId={inv.invoiceId} originalInvoice={inv.originalInvoice} />
+                                          </TableCell>
                                         </TableRow>
                                       ))}
                                     </TableBody>
@@ -898,104 +943,121 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
                           </div>
 
                           {/* Processed */}
-                          <div className="bg-white rounded-lg shadow-sm border border-slate-200 flex flex-col">
-                            <div className="flex flex-row justify-between items-center px-4 py-2 bg-slate-50 border-b gap-2">
-                              <div className="relative w-48">
-                                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                                <Input
-                                  placeholder="Search..."
-                                  className="pl-7 h-8 text-xs bg-white"
-                                  value={invoiceSearch}
-                                  onChange={e => setInvoiceSearch(e.target.value)}
-                                />
+                          <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+                            <button
+                              type="button"
+                              onClick={() => setProcessedExpanded(prev => !prev)}
+                              className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50"
+                            >
+                              <div className="flex items-center gap-2">
+                                {processedExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+                                <span className="text-sm font-semibold text-[#191C1E]">Processed</span>
                               </div>
-                              {selectedInvoices.length > 0 && (
-                                <div className="flex items-center gap-2 flex-1 max-w-md">
-                                  <Input
-                                    placeholder={`Add note to ${selectedInvoices.length} selected...`}
-                                    className="h-8 text-xs bg-white"
-                                    value={bulkNoteDraft}
-                                    onChange={e => setBulkNoteDraft(e.target.value)}
-                                    onKeyDown={e => { if (e.key === 'Enter') handlePostBulkNote() }}
-                                  />
-                                  <Button
-                                    size="sm"
-                                    className="h-8 text-xs bg-[#4648D4] hover:bg-[#3537b3] shrink-0"
-                                    disabled={!bulkNoteDraft.trim() || postingBulkNote}
-                                    onClick={handlePostBulkNote}
-                                  >
-                                    {postingBulkNote ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : `Add Note`}
-                                  </Button>
-                                </div>
-                              )}
-                            </div>
-                            <div className="overflow-auto flex-1 max-h-[480px]">
-                              <Table>
-                                <TableHeader className="bg-slate-50 sticky top-0 shadow-sm z-10 border-b">
-                                  <TableRow>
-                                    <TableHead className="w-10 pl-4">
-                                      <Checkbox checked={selectedInvoices.length > 0 && selectedInvoices.length === processedInvoices.length} onCheckedChange={handleSelectAll} />
-                                    </TableHead>
-                                    <SortableTableHead label="INVOICE" columnKey="originalInvoice" currentSortColumn={invoiceSortCol} currentSortDirection={invoiceSortDir} onSort={handleInvoiceSort} className="h-9 text-[11px]" />
-                                    <SortableTableHead label="DATE" columnKey="date" currentSortColumn={invoiceSortCol} currentSortDirection={invoiceSortDir} onSort={handleInvoiceSort} className="h-9 text-[11px]" />
-                                    <SortableTableHead label="AGE" columnKey="_age" currentSortColumn={invoiceSortCol} currentSortDirection={invoiceSortDir} onSort={handleInvoiceSort} className="h-9 text-[11px] text-right" />
-                                    <SortableTableHead label="AMOUNT" columnKey="amount" currentSortColumn={invoiceSortCol} currentSortDirection={invoiceSortDir} onSort={handleInvoiceSort} className="h-9 text-[11px] text-right" />
-                                    <SortableTableHead label="DEBTOR" columnKey="debtorName" currentSortColumn={invoiceSortCol} currentSortDirection={invoiceSortDir} onSort={handleInvoiceSort} className="h-9 text-[11px]" />
-                                    <SortableTableHead label="STATUS" columnKey="status" currentSortColumn={invoiceSortCol} currentSortDirection={invoiceSortDir} onSort={handleInvoiceSort} className="h-9 text-[11px]" />
-                                    <SortableTableHead label="FLAG" columnKey="flagged" currentSortColumn={invoiceSortCol} currentSortDirection={invoiceSortDir} onSort={handleInvoiceSort} className="h-9 text-[11px] text-center" />
-                                    <TableHead className="h-9 text-[11px] w-16 text-center">NOTES</TableHead>
-                                  </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                  {sortedInvoices.length === 0 && (
-                                    <TableRow>
-                                      <TableCell colSpan={9} className="text-center py-10 text-sm text-muted-foreground">
-                                        {invoiceSearch ? 'No invoices match your search.' : 'No processed invoices for this client.'}
-                                      </TableCell>
-                                    </TableRow>
+                              <Badge variant="outline" className="bg-[#DCFCE7] text-[#15803D] border-transparent font-semibold">
+                                {processedInvoices.length}
+                              </Badge>
+                            </button>
+                            {processedExpanded && (
+                              <div className="border-t border-slate-200 flex flex-col">
+                                <div className="flex flex-row justify-between items-center px-4 py-2 bg-slate-50 border-b gap-2">
+                                  <div className="relative w-48">
+                                    <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                                    <Input
+                                      placeholder="Search..."
+                                      className="pl-7 h-8 text-xs bg-white"
+                                      value={invoiceSearch}
+                                      onChange={e => setInvoiceSearch(e.target.value)}
+                                    />
+                                  </div>
+                                  {selectedInvoices.length > 0 && (
+                                    <div className="flex items-center gap-2 flex-1 max-w-md">
+                                      <Input
+                                        placeholder={`Add note to ${selectedInvoices.length} selected...`}
+                                        className="h-8 text-xs bg-white"
+                                        value={bulkNoteDraft}
+                                        onChange={e => setBulkNoteDraft(e.target.value)}
+                                        onKeyDown={e => { if (e.key === 'Enter') handlePostBulkNote() }}
+                                      />
+                                      <Button
+                                        size="sm"
+                                        className="h-8 text-xs bg-[#4648D4] hover:bg-[#3537b3] shrink-0"
+                                        disabled={!bulkNoteDraft.trim() || postingBulkNote}
+                                        onClick={handlePostBulkNote}
+                                      >
+                                        {postingBulkNote ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : `Add Note`}
+                                      </Button>
+                                    </div>
                                   )}
-                                  {sortedInvoices.map((inv) => (
-                                    <TableRow key={inv.invoiceId} className="h-10 border-b">
-                                      <TableCell className="pl-4 py-1">
-                                        <Checkbox checked={selectedInvoices.includes(inv.invoiceId)} onCheckedChange={() => toggleInvoice(inv.invoiceId)} />
-                                      </TableCell>
-                                      <TableCell className="font-medium text-blue-600 py-1 text-xs">
-                                        <button
-                                          type="button"
-                                          onClick={() => setPreviewInvoice({ id: inv.invoiceId, originalInvoice: inv.originalInvoice })}
-                                          className="hover:underline"
-                                        >
-                                          {inv.originalInvoice}
-                                        </button>
-                                      </TableCell>
-                                      <TableCell className="text-muted-foreground py-1 text-xs">{inv.date}</TableCell>
-                                      <TableCell className="text-right py-1 text-xs text-muted-foreground tabular-nums">{computeAge(inv.date)}d</TableCell>
-                                      <TableCell className="text-right font-semibold py-1 text-xs tabular-nums">${inv.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
-                                      <TableCell className="py-1 text-xs">{inv.debtorName || '-'}</TableCell>
-                                      <TableCell className="py-1">
-                                        <Badge variant="outline" className={`text-[10px] h-5 px-1.5 border-transparent font-semibold ${
-                                          inv.status === 'Pre-Verified' ? 'bg-[#DCFCE7] text-[#15803D]' :
-                                          inv.status === 'Unverified' ? 'bg-[#FEF9C3] text-[#A16207]' :
-                                          inv.status === 'Paid' ? 'bg-slate-800 text-white' :
-                                          inv.status === 'OA' ? 'bg-blue-100 text-blue-800' :
-                                          'bg-[#FEE2E2] text-[#B91C1C]'
-                                        }`}>
-                                          {inv.status}
-                                        </Badge>
-                                      </TableCell>
-                                      <TableCell className="text-center py-1">
-                                        {inv.flagged && (
-                                          <span className="inline-flex items-center justify-center w-5 h-5 bg-red-100 rounded-full text-red-700 text-[10px] font-bold" title={inv.flagReason}>!</span>
-                                        )}
-                                      </TableCell>
-                                      <TableCell className="py-1 text-center pr-4">
-                                        <InvoiceNotesPopover invoiceId={inv.invoiceId} originalInvoice={inv.originalInvoice} />
-                                      </TableCell>
-                                    </TableRow>
-                                  ))}
-                                </TableBody>
-                              </Table>
-                            </div>
+                                </div>
+                                <div className="overflow-auto flex-1 max-h-[480px]">
+                                  <Table>
+                                    <TableHeader className="bg-slate-50 sticky top-0 shadow-sm z-10 border-b">
+                                      <TableRow>
+                                        <TableHead className="w-10 pl-4">
+                                          <Checkbox checked={selectedInvoices.length > 0 && selectedInvoices.length === processedInvoices.length} onCheckedChange={handleSelectAll} />
+                                        </TableHead>
+                                        <SortableTableHead label="INVOICE" columnKey="originalInvoice" currentSortColumn={invoiceSortCol} currentSortDirection={invoiceSortDir} onSort={handleInvoiceSort} className="h-9 text-[11px]" />
+                                        <SortableTableHead label="DATE" columnKey="date" currentSortColumn={invoiceSortCol} currentSortDirection={invoiceSortDir} onSort={handleInvoiceSort} className="h-9 text-[11px]" />
+                                        <SortableTableHead label="AGE" columnKey="_age" currentSortColumn={invoiceSortCol} currentSortDirection={invoiceSortDir} onSort={handleInvoiceSort} className="h-9 text-[11px] text-right" />
+                                        <SortableTableHead label="AMOUNT" columnKey="amount" currentSortColumn={invoiceSortCol} currentSortDirection={invoiceSortDir} onSort={handleInvoiceSort} className="h-9 text-[11px] text-right" />
+                                        <SortableTableHead label="DEBTOR" columnKey="debtorName" currentSortColumn={invoiceSortCol} currentSortDirection={invoiceSortDir} onSort={handleInvoiceSort} className="h-9 text-[11px]" />
+                                        <SortableTableHead label="STATUS" columnKey="status" currentSortColumn={invoiceSortCol} currentSortDirection={invoiceSortDir} onSort={handleInvoiceSort} className="h-9 text-[11px]" />
+                                        <SortableTableHead label="FLAG" columnKey="flagged" currentSortColumn={invoiceSortCol} currentSortDirection={invoiceSortDir} onSort={handleInvoiceSort} className="h-9 text-[11px] text-center" />
+                                        <TableHead className="h-9 text-[11px] w-16 text-center">NOTES</TableHead>
+                                      </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                      {sortedInvoices.length === 0 && (
+                                        <TableRow>
+                                          <TableCell colSpan={9} className="text-center py-10 text-sm text-muted-foreground">
+                                            {invoiceSearch ? 'No invoices match your search.' : 'No processed invoices for this client.'}
+                                          </TableCell>
+                                        </TableRow>
+                                      )}
+                                      {sortedInvoices.map((inv) => (
+                                        <TableRow key={inv.invoiceId} className="h-10 border-b">
+                                          <TableCell className="pl-4 py-1">
+                                            <Checkbox checked={selectedInvoices.includes(inv.invoiceId)} onCheckedChange={() => toggleInvoice(inv.invoiceId)} />
+                                          </TableCell>
+                                          <TableCell className="font-medium text-blue-600 py-1 text-xs">
+                                            <button
+                                              type="button"
+                                              onClick={() => setPreviewInvoice({ id: inv.invoiceId, originalInvoice: inv.originalInvoice })}
+                                              className="hover:underline"
+                                            >
+                                              {inv.originalInvoice}
+                                            </button>
+                                          </TableCell>
+                                          <TableCell className="text-muted-foreground py-1 text-xs">{inv.date}</TableCell>
+                                          <TableCell className="text-right py-1 text-xs text-muted-foreground tabular-nums">{computeAge(inv.date)}d</TableCell>
+                                          <TableCell className="text-right font-semibold py-1 text-xs tabular-nums">${inv.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                                          <TableCell className="py-1 text-xs">{inv.debtorName || '-'}</TableCell>
+                                          <TableCell className="py-1">
+                                            <Badge variant="outline" className={`text-[10px] h-5 px-1.5 border-transparent font-semibold ${
+                                              inv.status === 'Pre-Verified' ? 'bg-[#DCFCE7] text-[#15803D]' :
+                                              inv.status === 'Unverified' ? 'bg-[#FEF9C3] text-[#A16207]' :
+                                              inv.status === 'Paid' ? 'bg-slate-800 text-white' :
+                                              inv.status === 'OA' ? 'bg-blue-100 text-blue-800' :
+                                              'bg-[#FEE2E2] text-[#B91C1C]'
+                                            }`}>
+                                              {inv.status}
+                                            </Badge>
+                                          </TableCell>
+                                          <TableCell className="text-center py-1">
+                                            {inv.flagged && (
+                                              <span className="inline-flex items-center justify-center w-5 h-5 bg-red-100 rounded-full text-red-700 text-[10px] font-bold" title={inv.flagReason}>!</span>
+                                            )}
+                                          </TableCell>
+                                          <TableCell className="py-1 text-center pr-4">
+                                            <InvoiceNotesPopover invoiceId={inv.invoiceId} originalInvoice={inv.originalInvoice} />
+                                          </TableCell>
+                                        </TableRow>
+                                      ))}
+                                    </TableBody>
+                                  </Table>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </TabsContent>
 

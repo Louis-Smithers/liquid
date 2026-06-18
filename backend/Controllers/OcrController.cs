@@ -73,6 +73,11 @@ public class OcrController : ControllerBase
         if (!new FileExtensionContentTypeProvider().TryGetContentType(filename, out var contentType))
             contentType = "application/octet-stream";
 
+        // Each scan path embeds a fresh Guid (see OcrService.ScanAsync), so the object at this
+        // path never changes — safe to let the browser cache it long-term instead of
+        // re-downloading the same file every time the review UI reselects it.
+        Response.Headers.CacheControl = "private, max-age=86400, immutable";
+
         return File(bytes, contentType, filename);
     }
 

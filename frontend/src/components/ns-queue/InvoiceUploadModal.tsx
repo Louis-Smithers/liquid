@@ -9,7 +9,7 @@ import { CopyButton } from '@/components/ui/copy-button'
 import { PasteButton } from '@/components/ui/paste-button'
 import { DocumentPreview } from '@/components/ocr/DocumentPreview'
 import { api } from '@/lib/api'
-import { Upload, FileText, CheckCircle, XCircle, Loader2, AlertTriangle, Plus } from 'lucide-react'
+import { Upload, FileText, CheckCircle, XCircle, Loader2, AlertTriangle, Plus, X } from 'lucide-react'
 
 interface Debtor {
   id: string
@@ -28,6 +28,7 @@ interface OcrField {
 
 interface ScanResult {
   rawDocumentPath: string
+  previewPath?: string
   fields: OcrField[]
 }
 
@@ -41,6 +42,7 @@ interface UploadedFile {
   error?: string
   invoiceId?: string
   formData?: ConfirmForm
+  addedToQueue?: boolean
 }
 
 interface ConfirmForm {
@@ -146,9 +148,20 @@ export function InvoiceUploadModal({
       file,
       status: 'pending',
     }))
+    // Just enqueue as 'pending' — the scan-queue effect below picks them up one at a time so a
+    // multi-file drop doesn't fire a burst of heavy Tesseract+LLM scans in parallel.
     setFiles(prev => [...prev, ...entries])
-    entries.forEach(e => scanFile(e))
-  }, [scanFile])
+  }, [])
+
+  // Sequential scan queue: only ever scan one file at a time. Re-fires whenever `files`
+  // changes (a scan finishing flips its status off 'scanning', which re-triggers this to pick
+  // up the next 'pending' file).
+  useEffect(() => {
+    const isScanning = files.some(f => f.status === 'scanning')
+    if (isScanning) return
+    const next = files.find(f => f.status === 'pending')
+    if (next) scanFile(next)
+  }, [files, scanFile])
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
@@ -173,7 +186,16 @@ export function InvoiceUploadModal({
     ))
   }
 
-  const confirmFile = async (entry: UploadedFile) => {
+  const removeFile = (id: string) => {
+    setFiles(prev => prev.filter(f => f.id !== id))
+    if (selectedId === id) {
+      const next = files.find(f => f.id !== id && f.status === 'review')
+      setSelectedId(next?.id ?? null)
+      setActiveField(null)
+    }
+  }
+
+  const confirmFile = async (entry: UploadedFile, addToNsQueue: boolean) => {
     if (!entry.scanResult || !entry.formData) return
     const { formData: form, scanResult: scan } = entry
 
@@ -191,12 +213,12 @@ export function InvoiceUploadModal({
         clientShortcode,
         debtorId: isNew ? null : form.debtorId,
         newDebtorName: isNew ? form.newDebtorName : null,
-        addToNsQueue: true,
+        addToNsQueue,
         notes: '',
       }
       const res = await api.post<{ invoiceId: string }>('/api/ocr/confirm', payload)
       setFiles(prev => prev.map(f =>
-        f.id === entry.id ? { ...f, status: 'done', invoiceId: res.data.invoiceId } : f
+        f.id === entry.id ? { ...f, status: 'done', invoiceId: res.data.invoiceId, addedToQueue: addToNsQueue } : f
       ))
       onInvoicesAdded()
       // auto-select next review item
@@ -287,47 +309,60 @@ export function InvoiceUploadModal({
                 <p className="text-xs text-muted-foreground text-center py-4">No files yet</p>
               )}
               {files.map(f => (
-                <button
+                <div
                   key={f.id}
-                  onClick={() => {
-                    if (f.status === 'review' || f.status === 'error') {
-                      setSelectedId(f.id)
-                      setActiveField(null)
-                    }
-                  }}
-                  className={`w-full text-left rounded-md px-3 py-2 text-xs transition-colors flex items-start gap-2 ${
+                  className={`group w-full rounded-md px-3 py-2 text-xs transition-colors flex items-start gap-2 ${
                     selectedId === f.id
                       ? 'bg-[#EEF2FF] border border-[#C7D2FE]'
                       : f.status === 'review'
                       ? 'hover:bg-white border border-transparent hover:border-[#C7C4D7]'
-                      : 'border border-transparent cursor-default'
+                      : 'border border-transparent'
                   }`}
                 >
-                  <span className="mt-0.5 shrink-0">
-                    {f.status === 'scanning' && <Loader2 className="h-3.5 w-3.5 animate-spin text-[#4648D4]" />}
-                    {f.status === 'pending' && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
-                    {f.status === 'review' && <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />}
-                    {f.status === 'confirming' && <Loader2 className="h-3.5 w-3.5 animate-spin text-[#4648D4]" />}
-                    {f.status === 'done' && <CheckCircle className="h-3.5 w-3.5 text-green-600" />}
-                    {f.status === 'error' && <XCircle className="h-3.5 w-3.5 text-red-500" />}
-                  </span>
-                  <span className="flex-1 min-w-0">
-                    <span className="block font-medium truncate text-[#191C1E]">{f.file.name}</span>
-                    <span className={`block mt-0.5 ${
-                      f.status === 'done' ? 'text-green-600' :
-                      f.status === 'error' ? 'text-red-500' :
-                      f.status === 'review' ? 'text-amber-600' :
-                      'text-muted-foreground'
-                    }`}>
-                      {f.status === 'scanning' ? 'Scanning...' :
-                       f.status === 'pending' ? 'Queued' :
-                       f.status === 'review' ? 'Needs review' :
-                       f.status === 'confirming' ? 'Confirming...' :
-                       f.status === 'done' ? 'Added to queue' :
-                       f.error ?? 'Error'}
+                  <button
+                    onClick={() => {
+                      if (f.status === 'review' || f.status === 'error') {
+                        setSelectedId(f.id)
+                        setActiveField(null)
+                      }
+                    }}
+                    className={`flex items-start gap-2 flex-1 min-w-0 text-left ${f.status === 'review' || f.status === 'error' ? 'cursor-pointer' : 'cursor-default'}`}
+                  >
+                    <span className="mt-0.5 shrink-0">
+                      {f.status === 'scanning' && <Loader2 className="h-3.5 w-3.5 animate-spin text-[#4648D4]" />}
+                      {f.status === 'pending' && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+                      {f.status === 'review' && <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />}
+                      {f.status === 'confirming' && <Loader2 className="h-3.5 w-3.5 animate-spin text-[#4648D4]" />}
+                      {f.status === 'done' && <CheckCircle className="h-3.5 w-3.5 text-green-600" />}
+                      {f.status === 'error' && <XCircle className="h-3.5 w-3.5 text-red-500" />}
                     </span>
-                  </span>
-                </button>
+                    <span className="flex-1 min-w-0">
+                      <span className="block font-medium truncate text-[#191C1E]">{f.file.name}</span>
+                      <span className={`block mt-0.5 ${
+                        f.status === 'done' ? 'text-green-600' :
+                        f.status === 'error' ? 'text-red-500' :
+                        f.status === 'review' ? 'text-amber-600' :
+                        'text-muted-foreground'
+                      }`}>
+                        {f.status === 'scanning' ? 'Scanning...' :
+                         f.status === 'pending' ? 'Queued' :
+                         f.status === 'review' ? 'Needs review' :
+                         f.status === 'confirming' ? 'Confirming...' :
+                         f.status === 'done' ? (f.addedToQueue ? 'Added to queue' : 'Saved (unprocessed)') :
+                         f.error ?? 'Error'}
+                      </span>
+                    </span>
+                  </button>
+                  {f.status !== 'confirming' && f.status !== 'done' && (
+                    <button
+                      onClick={e => { e.stopPropagation(); removeFile(f.id) }}
+                      className="shrink-0 mt-0.5 p-0.5 rounded text-muted-foreground/50 opacity-0 group-hover:opacity-100 hover:text-red-500 hover:bg-red-50 transition-opacity"
+                      title="Remove"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
               ))}
             </div>
 
@@ -351,7 +386,9 @@ export function InvoiceUploadModal({
                 {selectedFile?.status === 'done' ? (
                   <>
                     <CheckCircle className="h-12 w-12 text-green-500 mb-3" />
-                    <p className="font-semibold text-[#191C1E]">Invoice added to queue</p>
+                    <p className="font-semibold text-[#191C1E]">
+                      {selectedFile.addedToQueue ? 'Invoice added to queue' : 'Invoice saved (unprocessed)'}
+                    </p>
                     <p className="text-sm text-muted-foreground mt-1">{selectedFile.invoiceId}</p>
                     {pendingCount > 0 && (
                       <Button
@@ -394,7 +431,7 @@ export function InvoiceUploadModal({
               <div className="flex h-full">
                 <div className="flex-1 min-w-0 border-r p-4">
                   <DocumentPreview
-                    fileUrl={`/api/ocr/scan/file?path=${encodeURIComponent(selectedFile.scanResult.rawDocumentPath)}`}
+                    fileUrl={`/api/ocr/scan/file?path=${encodeURIComponent(selectedFile.scanResult.previewPath ?? selectedFile.scanResult.rawDocumentPath)}`}
                     fields={selectedFile.scanResult.fields}
                     activeField={activeField}
                     onFieldClick={setActiveField}
@@ -406,7 +443,7 @@ export function InvoiceUploadModal({
                     debtors={debtors}
                     clientShortcode={clientShortcode}
                     onChange={patch => updateForm(selectedFile.id, patch)}
-                    onConfirm={() => confirmFile(selectedFile)}
+                    onConfirm={addToNsQueue => confirmFile(selectedFile, addToNsQueue)}
                     confirming={selectedFile.status === 'confirming'}
                     activeField={activeField}
                     onFieldFocus={setActiveField}
@@ -435,7 +472,7 @@ function ReviewForm({
   debtors: Debtor[]
   clientShortcode: string
   onChange: (patch: Partial<ConfirmForm>) => void
-  onConfirm: () => void
+  onConfirm: (addToNsQueue: boolean) => void
   confirming: boolean
   activeField: string | null
   onFieldFocus: (fieldName: string) => void
@@ -450,7 +487,9 @@ function ReviewForm({
     <div className="p-6 space-y-5">
       <div>
         <p className="font-semibold text-[#191C1E] truncate">{file.file.name}</p>
-        <p className="text-xs text-muted-foreground mt-0.5">Review the extracted fields below and confirm to add to the NS queue.</p>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          Review the extracted fields below, then add it to the NS queue or just save it as an invoice.
+        </p>
       </div>
 
       {/* Invoice Number */}
@@ -565,23 +604,30 @@ function ReviewForm({
         </div>
       </div>
 
-      {/* NS Queue (locked on) */}
-      <div className="flex items-center gap-3 rounded-md border bg-[#EEF2FF] border-[#C7D2FE] px-4 py-3">
-        <CheckCircle className="h-4 w-4 text-[#4648D4] shrink-0" />
-        <span className="text-sm text-[#4648D4] font-medium">Will be added to the active NS queue draft</span>
+      <div className="space-y-2">
+        <Button
+          className="w-full bg-[#4648D4] hover:bg-[#3537b3]"
+          onClick={() => onConfirm(true)}
+          disabled={confirming || !form.invoiceNumber}
+        >
+          {confirming ? (
+            <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Confirming…</>
+          ) : (
+            'Confirm & Add to Queue'
+          )}
+        </Button>
+        <Button
+          className="w-full"
+          variant="outline"
+          onClick={() => onConfirm(false)}
+          disabled={confirming || !form.invoiceNumber}
+        >
+          Save (not in queue)
+        </Button>
+        <p className="text-xs text-muted-foreground text-center">
+          "Save (not in queue)" creates the invoice for this client/debtor without adding it to a Notification Sheet — it'll show up as Unprocessed.
+        </p>
       </div>
-
-      <Button
-        className="w-full bg-[#4648D4] hover:bg-[#3537b3]"
-        onClick={onConfirm}
-        disabled={confirming || !form.invoiceNumber}
-      >
-        {confirming ? (
-          <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Confirming…</>
-        ) : (
-          'Confirm & Add to Queue'
-        )}
-      </Button>
     </div>
   )
 }

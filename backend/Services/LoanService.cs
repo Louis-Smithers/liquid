@@ -142,7 +142,16 @@ public class LoanService : ILoanService
 
     // Builds the full amortisation table matching the PDF layout.
     // Row 0 is always the loan start date (opening balance = principal, no payment).
-    // Subsequent rows are driven by payment events sorted by date.
+    // Subsequent rows are driven by a merged timeline of:
+    //   - monthly interest-accrual dates (the anniversary of StartDate's day-of-month,
+    //     clamped to the last day of short months), and
+    //   - payment events.
+    // The timeline always runs at least 12 months past today, so a brand-new loan
+    // immediately shows a year of projected schedule (not just the start row), and an
+    // older loan keeps showing a year of upcoming accrual past the present. Once a real
+    // payment lands on one of those dates, that row uses the real payment instead of the
+    // projection, and every row after it recomputes from the actual numbers — the table
+    // is always rebuilt from scratch from the stored payments, so this happens automatically.
     // Interest = annualRate / 365 × days × openingBalance  (daily compound per PDF).
     // ClosingBalance = OpeningBalance + Interest − PaymentReceived
     // Principal repaid = PaymentReceived − Interest  (column C in PDF = B − E)
@@ -162,45 +171,76 @@ public class LoanService : ILoanService
             PaymentId: null,
             IsOverride: false));
 
-        var payments = loan.Payments
+        var horizon = DateOnly.FromDateTime(DateTime.UtcNow).AddMonths(12);
+
+        var paymentsByDate = loan.Payments
             .OrderBy(p => p.PaymentDate)
-            .ToList();
+            .GroupBy(p => p.PaymentDate)
+            .ToDictionary(g => g.Key, g => g.Last());
+
+        var eventDates = new SortedSet<DateOnly>(MonthlyAccrualDates(loan.StartDate, horizon));
+        foreach (var date in paymentsByDate.Keys) eventDates.Add(date);
 
         decimal runningBalance = loan.Principal;
+        var prevDate = loan.StartDate;
 
-        foreach (var payment in payments)
+        foreach (var date in eventDates)
         {
-            var prevDate = rows[^1].Date;
-            var days = payment.PaymentDate.DayNumber - prevDate.DayNumber;
-            if (days < 0) days = 0;
+            var days = date.DayNumber - prevDate.DayNumber;
+            if (days <= 0) continue;
+
+            var hasPayment = paymentsByDate.TryGetValue(date, out var payment);
+            var paymentAmount = hasPayment ? payment!.PaymentAmount : 0m;
 
             var autoInterest = Math.Round(runningBalance * loan.InterestRate / 365m * days, 2);
-            var interest = payment.OverrideInterest ?? autoInterest;
+            var interest = hasPayment ? (payment!.OverrideInterest ?? autoInterest) : autoInterest;
 
-            // Auto-principal = payment − interest; can be overridden
-            var autoPrincipal = payment.PaymentAmount - interest;
-            var principal = payment.OverridePrincipal ?? autoPrincipal;
+            // Auto-principal = payment − interest; can be overridden on payment rows.
+            // Pure accrual rows have no payment, so principal is negative (balance grows).
+            var autoPrincipal = paymentAmount - interest;
+            var principal = hasPayment ? (payment!.OverridePrincipal ?? autoPrincipal) : autoPrincipal;
 
             // ClosingBalance = OpeningBalance + Interest − PaymentReceived
             // (matches PDF: balance goes UP by interest, DOWN by payment)
-            var closing = runningBalance + interest - payment.PaymentAmount;
-            closing = Math.Round(closing, 2);
+            var closing = Math.Round(runningBalance + interest - paymentAmount, 2);
 
             rows.Add(new LoanTableRowDto(
-                Date: payment.PaymentDate,
+                Date: date,
                 Days: days,
                 OpeningBalance: runningBalance,
-                PaymentReceived: payment.PaymentAmount,
+                PaymentReceived: paymentAmount,
                 Interest: interest,
                 Principal: Math.Round(principal, 2),
                 ClosingBalance: closing,
-                PaymentId: payment.Id,
-                IsOverride: payment.OverrideInterest.HasValue || payment.OverridePrincipal.HasValue));
+                PaymentId: hasPayment ? payment!.Id : null,
+                IsOverride: hasPayment && (payment!.OverrideInterest.HasValue || payment!.OverridePrincipal.HasValue)));
 
             runningBalance = closing;
+            prevDate = date;
         }
 
         return rows;
+    }
+
+    // Monthly anniversaries of startDate's day-of-month, strictly after startDate, through endDateInclusive.
+    // Short months clamp to the last day of that month (e.g. a 31st start posts on the 28th/29th/30th).
+    private static IEnumerable<DateOnly> MonthlyAccrualDates(DateOnly startDate, DateOnly endDateInclusive)
+    {
+        var targetDay = startDate.Day;
+        var monthsAhead = 1;
+
+        while (true)
+        {
+            var firstOfMonth = startDate.AddMonths(monthsAhead).AddDays(-(startDate.Day - 1));
+            var daysInMonth = DateTime.DaysInMonth(firstOfMonth.Year, firstOfMonth.Month);
+            var day = Math.Min(targetDay, daysInMonth);
+            var date = new DateOnly(firstOfMonth.Year, firstOfMonth.Month, day);
+
+            if (date > endDateInclusive) yield break;
+
+            yield return date;
+            monthsAhead++;
+        }
     }
 
     // ── Mappers ────────────────────────────────────────────────────────────

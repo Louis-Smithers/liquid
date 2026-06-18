@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
-import { ChevronDown, ChevronRight, Loader2 } from "lucide-react"
+import { ChevronDown, ChevronRight, Loader2, Search } from "lucide-react"
 import { api } from "@/lib/api"
 import type { Debtor } from "@/pages/DebtorsPage"
 import { useNSQueue } from "@/context/NSQueueContext"
@@ -37,14 +37,23 @@ export function DebtorDrawer({ debtor, onClose }: DebtorDrawerProps) {
   const { setActiveClient, addItem } = useNSQueue()
 
   const [unprocessedExpanded, setUnprocessedExpanded] = useState(false)
+  const [processedExpanded, setProcessedExpanded] = useState(true)
   const [unprocessedSelected, setUnprocessedSelected] = useState<string[]>([])
   const [addingToQueue, setAddingToQueue] = useState(false)
   const [selectedInvoices, setSelectedInvoices] = useState<string[]>([])
   const [bulkNoteDraft, setBulkNoteDraft] = useState('')
   const [postingBulkNote, setPostingBulkNote] = useState(false)
+  const [invoiceSearch, setInvoiceSearch] = useState('')
 
-  const unprocessedInvoices = invoices.filter(inv => !inv.isProcessed)
-  const processedInvoices = invoices.filter(inv => inv.isProcessed)
+  const filteredInvoices = invoices.filter(inv => {
+    const q = invoiceSearch.toLowerCase()
+    return !q ||
+      inv.originalInvoice.toLowerCase().includes(q) ||
+      inv.liquidClient.toLowerCase().includes(q) ||
+      inv.status.toLowerCase().includes(q)
+  })
+  const unprocessedInvoices = filteredInvoices.filter(inv => !inv.isProcessed)
+  const processedInvoices = filteredInvoices.filter(inv => inv.isProcessed)
 
   const fetchInvoices = async () => {
     if (!debtor) return
@@ -190,11 +199,20 @@ export function DebtorDrawer({ debtor, onClose }: DebtorDrawerProps) {
                     </button>
                     {unprocessedExpanded && (
                       <div className="border-t border-[#C7C4D7]/50">
-                        <div className="flex items-center justify-between px-4 py-2 bg-slate-50 border-b gap-2">
-                          <span className="text-xs text-muted-foreground">
-                            {unprocessedSelected.length > 0 ? `${unprocessedSelected.length} selected` : 'Not yet added to a Notification Sheet'}
-                          </span>
+                        <div className="flex flex-row justify-between items-center px-4 py-2 bg-slate-50 border-b border-[#C7C4D7]/50 gap-2">
+                          <div className="relative w-48">
+                            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                            <Input
+                              placeholder="Search..."
+                              className="pl-7 h-8 text-xs bg-white"
+                              value={invoiceSearch}
+                              onChange={e => setInvoiceSearch(e.target.value)}
+                            />
+                          </div>
                           <div className="flex items-center gap-2">
+                            {unprocessedSelected.length > 0 && (
+                              <span className="text-xs text-muted-foreground">{unprocessedSelected.length} selected</span>
+                            )}
                             <Button
                               size="sm"
                               variant="outline"
@@ -211,10 +229,10 @@ export function DebtorDrawer({ debtor, onClose }: DebtorDrawerProps) {
                             </Link>
                           </div>
                         </div>
-                        <div className="overflow-auto max-h-[280px]">
+                        <div className="overflow-auto max-h-[420px]">
                           <Table>
                             <TableHeader className="bg-[#F8FAFC] sticky top-0 z-10 border-b border-[#C7C4D7]/50">
-                              <TableRow>
+                              <TableRow className="hover:bg-transparent">
                                 <TableHead className="w-10 pl-4">
                                   <Checkbox
                                     checked={unprocessedSelected.length > 0 && unprocessedSelected.length === unprocessedInvoices.length}
@@ -222,14 +240,18 @@ export function DebtorDrawer({ debtor, onClose }: DebtorDrawerProps) {
                                   />
                                 </TableHead>
                                 <TableHead className="h-10 text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Invoice #</TableHead>
+                                <TableHead className="h-10 text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Client</TableHead>
                                 <TableHead className="h-10 text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Date</TableHead>
                                 <TableHead className="h-10 text-xs font-semibold text-[#6B7280] uppercase tracking-wider text-right">Amount</TableHead>
-                                <TableHead className="h-10 text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Source</TableHead>
+                                <TableHead className="h-10 text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Status</TableHead>
+                                <TableHead className="h-10 text-xs font-semibold text-[#6B7280] uppercase tracking-wider text-center">Notes</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
                               {unprocessedInvoices.length === 0 ? (
-                                <TableRow><TableCell colSpan={5} className="text-center py-8 text-[#6B7280]">No unprocessed invoices.</TableCell></TableRow>
+                                <TableRow><TableCell colSpan={7} className="text-center py-8 text-[#6B7280]">
+                                  {invoiceSearch ? 'No invoices match your search.' : 'No unprocessed invoices.'}
+                                </TableCell></TableRow>
                               ) : (
                                 unprocessedInvoices.map((inv) => (
                                   <TableRow key={inv.invoiceId} className="border-b border-[#C7C4D7]/30">
@@ -245,11 +267,28 @@ export function DebtorDrawer({ debtor, onClose }: DebtorDrawerProps) {
                                         {inv.originalInvoice}
                                       </button>
                                     </TableCell>
+                                    <TableCell className="text-[#191C1E]">{inv.liquidClient}</TableCell>
                                     <TableCell className="text-[#6B7280]">{inv.date}</TableCell>
                                     <TableCell className="text-right font-medium text-[#191C1E]">
                                       ${inv.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                     </TableCell>
-                                    <TableCell className="text-[#6B7280]">{inv.source}</TableCell>
+                                    <TableCell>
+                                      <Badge
+                                        variant="outline"
+                                        className={`border-transparent font-medium ${
+                                          inv.status === 'Pre-Verified' ? 'bg-[#DCFCE7] text-[#15803D]' :
+                                          inv.status === 'Unverified' ? 'bg-[#FEF9C3] text-[#A16207]' :
+                                          inv.status === 'Paid' ? 'bg-slate-800 text-white' :
+                                          inv.status === 'OA' ? 'bg-blue-100 text-blue-800' :
+                                          'bg-[#FEE2E2] text-[#B91C1C]'
+                                        }`}
+                                      >
+                                        {inv.status}
+                                      </Badge>
+                                    </TableCell>
+                                    <TableCell className="text-center">
+                                      <InvoiceNotesPopover invoiceId={inv.invoiceId} originalInvoice={inv.originalInvoice} />
+                                    </TableCell>
                                   </TableRow>
                                 ))
                               )}
@@ -261,92 +300,111 @@ export function DebtorDrawer({ debtor, onClose }: DebtorDrawerProps) {
                   </div>
 
                   {/* Processed */}
-                  <div className="bg-white rounded-lg border border-[#C7C4D7]/50 shadow-sm overflow-hidden flex flex-col">
-                    {selectedInvoices.length > 0 && (
-                      <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 border-b border-[#C7C4D7]/50">
-                        <Input
-                          placeholder={`Add note to ${selectedInvoices.length} selected...`}
-                          className="h-8 text-xs bg-white max-w-md"
-                          value={bulkNoteDraft}
-                          onChange={e => setBulkNoteDraft(e.target.value)}
-                          onKeyDown={e => { if (e.key === 'Enter') handlePostBulkNote() }}
-                        />
-                        <Button
-                          size="sm"
-                          className="h-8 text-xs bg-[#4648D4] hover:bg-[#3537b3] shrink-0"
-                          disabled={!bulkNoteDraft.trim() || postingBulkNote}
-                          onClick={handlePostBulkNote}
-                        >
-                          {postingBulkNote ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Add Note'}
-                        </Button>
+                  <div className="bg-white rounded-lg border border-[#C7C4D7]/50 shadow-sm overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => setProcessedExpanded(prev => !prev)}
+                      className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50"
+                    >
+                      <div className="flex items-center gap-2">
+                        {processedExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+                        <span className="text-sm font-semibold text-[#191C1E]">Processed</span>
+                      </div>
+                      <Badge variant="outline" className="bg-[#DCFCE7] text-[#15803D] border-transparent font-semibold">
+                        {processedInvoices.length}
+                      </Badge>
+                    </button>
+                    {processedExpanded && (
+                      <div className="border-t border-[#C7C4D7]/50 flex flex-col">
+                        {selectedInvoices.length > 0 && (
+                          <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 border-b border-[#C7C4D7]/50">
+                            <Input
+                              placeholder={`Add note to ${selectedInvoices.length} selected...`}
+                              className="h-8 text-xs bg-white max-w-md"
+                              value={bulkNoteDraft}
+                              onChange={e => setBulkNoteDraft(e.target.value)}
+                              onKeyDown={e => { if (e.key === 'Enter') handlePostBulkNote() }}
+                            />
+                            <Button
+                              size="sm"
+                              className="h-8 text-xs bg-[#4648D4] hover:bg-[#3537b3] shrink-0"
+                              disabled={!bulkNoteDraft.trim() || postingBulkNote}
+                              onClick={handlePostBulkNote}
+                            >
+                              {postingBulkNote ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Add Note'}
+                            </Button>
+                          </div>
+                        )}
+                        <div className="overflow-auto max-h-[420px]">
+                          <Table>
+                            <TableHeader className="bg-[#F8FAFC] sticky top-0 z-10 border-b border-[#C7C4D7]/50">
+                              <TableRow className="hover:bg-transparent">
+                                <TableHead className="w-10 pl-4">
+                                  <Checkbox
+                                    checked={selectedInvoices.length > 0 && selectedInvoices.length === processedInvoices.length}
+                                    onCheckedChange={(checked) => setSelectedInvoices(checked ? processedInvoices.map(i => i.invoiceId) : [])}
+                                  />
+                                </TableHead>
+                                <TableHead className="h-10 text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Invoice #</TableHead>
+                                <TableHead className="h-10 text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Client</TableHead>
+                                <TableHead className="h-10 text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Date</TableHead>
+                                <TableHead className="h-10 text-xs font-semibold text-[#6B7280] uppercase tracking-wider text-right">Amount</TableHead>
+                                <TableHead className="h-10 text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Status</TableHead>
+                                <TableHead className="h-10 text-xs font-semibold text-[#6B7280] uppercase tracking-wider text-center">Notes</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {loading ? (
+                                <TableRow><TableCell colSpan={7} className="text-center py-8 text-[#6B7280]">Loading...</TableCell></TableRow>
+                              ) : processedInvoices.length === 0 ? (
+                                <TableRow><TableCell colSpan={7} className="text-center py-8 text-[#6B7280]">
+                                  {invoiceSearch ? 'No invoices match your search.' : 'No processed invoices.'}
+                                </TableCell></TableRow>
+                              ) : (
+                                processedInvoices.map((inv) => (
+                                  <TableRow key={inv.invoiceId} className="border-b border-[#C7C4D7]/30">
+                                    <TableCell className="pl-4">
+                                      <Checkbox checked={selectedInvoices.includes(inv.invoiceId)} onCheckedChange={() => toggleProcessedInvoice(inv.invoiceId)} />
+                                    </TableCell>
+                                    <TableCell className="font-medium text-[#4648D4]">
+                                      <button
+                                        type="button"
+                                        onClick={() => setPreviewInvoice({ id: inv.invoiceId, originalInvoice: inv.originalInvoice })}
+                                        className="hover:underline"
+                                      >
+                                        {inv.originalInvoice}
+                                      </button>
+                                    </TableCell>
+                                    <TableCell className="text-[#191C1E]">{inv.liquidClient}</TableCell>
+                                    <TableCell className="text-[#6B7280]">{inv.date}</TableCell>
+                                    <TableCell className="text-right font-medium text-[#191C1E]">
+                                      ${inv.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                    </TableCell>
+                                    <TableCell>
+                                      <Badge
+                                        variant="outline"
+                                        className={`border-transparent font-medium ${
+                                          inv.status === 'Pre-Verified' ? 'bg-[#DCFCE7] text-[#15803D]' :
+                                          inv.status === 'Unverified' ? 'bg-[#FEF9C3] text-[#A16207]' :
+                                          inv.status === 'Paid' ? 'bg-slate-800 text-white' :
+                                          inv.status === 'OA' ? 'bg-blue-100 text-blue-800' :
+                                          'bg-[#FEE2E2] text-[#B91C1C]'
+                                        }`}
+                                      >
+                                        {inv.status}
+                                      </Badge>
+                                    </TableCell>
+                                    <TableCell className="text-center">
+                                      <InvoiceNotesPopover invoiceId={inv.invoiceId} originalInvoice={inv.originalInvoice} />
+                                    </TableCell>
+                                  </TableRow>
+                                ))
+                              )}
+                            </TableBody>
+                          </Table>
+                        </div>
                       </div>
                     )}
-                    <div className="overflow-auto max-h-[420px]">
-                      <Table>
-                        <TableHeader className="bg-[#F8FAFC] sticky top-0 z-10 border-b border-[#C7C4D7]/50">
-                          <TableRow className="hover:bg-transparent">
-                            <TableHead className="w-10 pl-4">
-                              <Checkbox
-                                checked={selectedInvoices.length > 0 && selectedInvoices.length === processedInvoices.length}
-                                onCheckedChange={(checked) => setSelectedInvoices(checked ? processedInvoices.map(i => i.invoiceId) : [])}
-                              />
-                            </TableHead>
-                            <TableHead className="h-10 text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Invoice #</TableHead>
-                            <TableHead className="h-10 text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Client</TableHead>
-                            <TableHead className="h-10 text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Date</TableHead>
-                            <TableHead className="h-10 text-xs font-semibold text-[#6B7280] uppercase tracking-wider text-right">Amount</TableHead>
-                            <TableHead className="h-10 text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Status</TableHead>
-                            <TableHead className="h-10 text-xs font-semibold text-[#6B7280] uppercase tracking-wider text-center">Notes</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {loading ? (
-                            <TableRow><TableCell colSpan={7} className="text-center py-8 text-[#6B7280]">Loading...</TableCell></TableRow>
-                          ) : processedInvoices.length === 0 ? (
-                            <TableRow><TableCell colSpan={7} className="text-center py-8 text-[#6B7280]">No processed invoices.</TableCell></TableRow>
-                          ) : (
-                            processedInvoices.map((inv) => (
-                              <TableRow key={inv.invoiceId} className="border-b border-[#C7C4D7]/30">
-                                <TableCell className="pl-4">
-                                  <Checkbox checked={selectedInvoices.includes(inv.invoiceId)} onCheckedChange={() => toggleProcessedInvoice(inv.invoiceId)} />
-                                </TableCell>
-                                <TableCell className="font-medium text-[#4648D4]">
-                                  <button
-                                    type="button"
-                                    onClick={() => setPreviewInvoice({ id: inv.invoiceId, originalInvoice: inv.originalInvoice })}
-                                    className="hover:underline"
-                                  >
-                                    {inv.originalInvoice}
-                                  </button>
-                                </TableCell>
-                                <TableCell className="text-[#191C1E]">{inv.liquidClient}</TableCell>
-                                <TableCell className="text-[#6B7280]">{inv.date}</TableCell>
-                                <TableCell className="text-right font-medium text-[#191C1E]">
-                                  ${inv.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                                </TableCell>
-                                <TableCell>
-                                  <Badge
-                                    variant="outline"
-                                    className={`border-transparent font-medium ${
-                                      inv.status === 'Pre-Verified' ? 'bg-[#DCFCE7] text-[#15803D]' :
-                                      inv.status === 'Unverified' ? 'bg-[#FEF9C3] text-[#A16207]' :
-                                      inv.status === 'Paid' ? 'bg-slate-800 text-white' :
-                                      inv.status === 'OA' ? 'bg-blue-100 text-blue-800' :
-                                      'bg-[#FEE2E2] text-[#B91C1C]'
-                                    }`}
-                                  >
-                                    {inv.status}
-                                  </Badge>
-                                </TableCell>
-                                <TableCell className="text-center">
-                                  <InvoiceNotesPopover invoiceId={inv.invoiceId} originalInvoice={inv.originalInvoice} />
-                                </TableCell>
-                              </TableRow>
-                            ))
-                          )}
-                        </TableBody>
-                      </Table>
-                    </div>
                   </div>
                 </TabsContent>
               </Tabs>
