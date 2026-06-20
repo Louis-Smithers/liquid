@@ -6,6 +6,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Switch } from "@/components/ui/switch"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -359,6 +360,10 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
     }))
   }
 
+  const handleDetailsCheckboxChange = (name: keyof Client, checked: boolean) => {
+    setDetailsForm(prev => ({ ...prev, [name]: checked }))
+  }
+
   const saveDetails = async () => {
     if (!client) return
     setSavingDetails(true)
@@ -692,7 +697,9 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
                               )}
                               {sortedDebtors.map(d => {
                                 const isExpanded = expandedDebtor === d.id
-                                const dInvs = debtorInvoices[d.id] || []
+                                const dInvs = [...(debtorInvoices[d.id] || [])].sort(
+                                  (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+                                )
                                 const dLoading = debtorInvoicesLoading[d.id]
                                 return (
                                   <Fragment key={d.id}>
@@ -741,6 +748,7 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
                                               <colgroup>
                                                 <col className="w-8" />
                                                 <col />
+                                                <col className="w-24" />
                                                 <col className="w-16" />
                                                 <col className="w-24" />
                                                 <col className="w-20" />
@@ -753,7 +761,8 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
                                               <thead className="sticky top-0 z-10">
                                                 <tr className="border-b border-slate-200 text-[10px] font-semibold text-[#464554] uppercase tracking-[0.5px]">
                                                   <th className="py-1.5 bg-slate-50" />
-                                                  <th className="text-left py-1.5 pl-2 bg-slate-50">Invoice / Date</th>
+                                                  <th className="text-left py-1.5 pl-2 bg-slate-50">Invoice</th>
+                                                  <th className="text-left py-1.5 bg-slate-50">Date</th>
                                                   <th className="text-center py-1.5 bg-slate-50">Age</th>
                                                   <th className="text-center py-1.5 bg-slate-50">Total</th>
                                                   <th className="text-center py-1.5 bg-slate-50">0–30d</th>
@@ -784,8 +793,8 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
                                                         >
                                                           {inv.originalInvoice}
                                                         </button>
-                                                        <span className="text-muted-foreground"> · {inv.date}</span>
                                                       </td>
+                                                      <td className="py-1.5 text-left text-muted-foreground tabular-nums">{inv.date}</td>
                                                       <td className="py-1.5 text-center text-muted-foreground tabular-nums">{age}d</td>
                                                       <td className="py-1.5 text-center font-semibold tabular-nums">${inv.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                                                       {amountCell('d30')}
@@ -1066,6 +1075,24 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
                           <Card>
                             <CardHeader className="text-lg font-semibold">Client Details</CardHeader>
                             <CardContent className="space-y-4">
+                              <div className="flex items-center gap-6 p-3 rounded-md border border-slate-200 bg-slate-50">
+                                <div className="flex items-center gap-2">
+                                  <Switch
+                                    id="cd-active"
+                                    checked={!!detailsForm.active}
+                                    onCheckedChange={(checked) => handleDetailsCheckboxChange('active', checked)}
+                                  />
+                                  <Label htmlFor="cd-active" className="cursor-pointer">Active</Label>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <Switch
+                                    id="cd-dnc"
+                                    checked={!!detailsForm.dnc}
+                                    onCheckedChange={(checked) => handleDetailsCheckboxChange('dnc', checked)}
+                                  />
+                                  <Label htmlFor="cd-dnc" className="cursor-pointer">Do Not Call (DNC)</Label>
+                                </div>
+                              </div>
                               <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-2">
                                   <Label>Alpha Code</Label>

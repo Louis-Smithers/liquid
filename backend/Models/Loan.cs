@@ -22,6 +22,13 @@ public class Loan
 
     public DateOnly StartDate { get; set; }
 
+    // Fixed at creation; not editable afterward. Total length of the loan, in months.
+    public int TermMonths { get; set; }
+
+    // Fixed at creation; not editable afterward. How often interest is posted/payments are due.
+    // One of: "Monthly", "BiWeekly", "Weekly", "Quarterly".
+    public string Frequency { get; set; } = "Monthly";
+
     public string? Notes { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;

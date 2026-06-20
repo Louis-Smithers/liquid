@@ -11,6 +11,8 @@ public record LoanDto(
     decimal Principal,
     decimal InterestRate,
     DateOnly StartDate,
+    int TermMonths,
+    string Frequency,
     string? Notes,
     DateTimeOffset CreatedAt,
     List<LoanPaymentDto> Payments
@@ -49,6 +51,8 @@ public record LoanSummaryDto(
     decimal Principal,
     decimal InterestRate,
     DateOnly StartDate,
+    int TermMonths,
+    string Frequency,
     decimal CurrentBalance,    // latest closing balance from computed table
     decimal TotalInterest,     // sum of all accrued interest rows
     int PaymentCount
@@ -72,6 +76,8 @@ public record CreateLoanDto(
     decimal Principal,
     decimal InterestRate,
     DateOnly StartDate,
+    int TermMonths,
+    string Frequency,
     string? Notes
 );
 

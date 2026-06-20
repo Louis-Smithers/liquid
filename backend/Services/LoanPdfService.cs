@@ -88,6 +88,11 @@ public class LoanPdfService : ILoanPdfService
                                     t.Span("Start Date: ").SemiBold();
                                     t.Span(loan.StartDate.ToString("dd-MMM-yyyy"));
                                 });
+                                c.Item().Text(t =>
+                                {
+                                    t.Span("Term: ").SemiBold();
+                                    t.Span($"{loan.TermMonths} months ({loan.Frequency})");
+                                });
                                 c.Item().PaddingTop(4).Text(t =>
                                 {
                                     t.Span("Current Balance: ").SemiBold();

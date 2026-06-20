@@ -383,6 +383,8 @@ export function LoanDrawer({ loanId, onClose }: LoanDrawerProps) {
                             <DetailRow label="Principal" value={fmt(loan.principal)} />
                             <DetailRow label="Interest Rate" value={pct(loan.interestRate) + ' per year'} />
                             <DetailRow label="Start Date" value={loan.startDate} />
+                            <DetailRow label="Loan Term" value={`${loan.termMonths} months`} />
+                            <DetailRow label="Payment Frequency" value={loan.frequency} />
                             <DetailRow label="Notes" value={loan.notes} />
                           </div>
                         </>
@@ -421,10 +423,21 @@ export function LoanDrawer({ loanId, onClose }: LoanDrawerProps) {
                               <Input type="date" value={detailsForm.startDate} onChange={e => setDetailsForm(f => f ? { ...f, startDate: e.target.value } : f)} />
                             </div>
                             <div className="space-y-1.5">
+                              <Label className="text-muted-foreground">Loan Term</Label>
+                              <Input disabled value={`${loan.termMonths} months`} className="bg-slate-50" />
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label className="text-muted-foreground">Payment Frequency</Label>
+                              <Input disabled value={loan.frequency} className="bg-slate-50" />
+                            </div>
+                            <div className="col-span-2 space-y-1.5">
                               <Label>Notes</Label>
                               <Input value={detailsForm.notes} onChange={e => setDetailsForm(f => f ? { ...f, notes: e.target.value } : f)} />
                             </div>
                           </div>
+                          <p className="text-xs text-muted-foreground mt-2">
+                            Loan term and payment frequency are set when the loan is created and can't be changed afterward.
+                          </p>
                           <div className="flex gap-2 mt-6">
                             <Button onClick={saveDetails} disabled={detailsSaving} className="bg-[#4648D4] hover:bg-[#3537b3]">
                               {detailsSaving ? 'Saving...' : 'Save Changes'}

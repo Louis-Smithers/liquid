@@ -27,7 +27,7 @@ public class LoanService : ILoanService
             var totalInterest = rows.Sum(r => r.Interest);
             return new LoanSummaryDto(
                 l.Id, l.LenderName, l.BorrowerName, l.Guarantors,
-                l.Principal, l.InterestRate, l.StartDate,
+                l.Principal, l.InterestRate, l.StartDate, l.TermMonths, l.Frequency,
                 currentBalance, totalInterest, l.Payments.Count);
         }).ToList();
     }
@@ -58,6 +58,8 @@ public class LoanService : ILoanService
             Principal = dto.Principal,
             InterestRate = dto.InterestRate,
             StartDate = dto.StartDate,
+            TermMonths = dto.TermMonths,
+            Frequency = dto.Frequency,
             Notes = dto.Notes,
             CreatedBy = createdBy,
         };
@@ -143,15 +145,14 @@ public class LoanService : ILoanService
     // Builds the full amortisation table matching the PDF layout.
     // Row 0 is always the loan start date (opening balance = principal, no payment).
     // Subsequent rows are driven by a merged timeline of:
-    //   - monthly interest-accrual dates (the anniversary of StartDate's day-of-month,
-    //     clamped to the last day of short months), and
+    //   - interest-accrual dates, spaced per the loan's Frequency, running from the start
+    //     date through its fixed maturity date (StartDate + TermMonths), and
     //   - payment events.
-    // The timeline always runs at least 12 months past today, so a brand-new loan
-    // immediately shows a year of projected schedule (not just the start row), and an
-    // older loan keeps showing a year of upcoming accrual past the present. Once a real
-    // payment lands on one of those dates, that row uses the real payment instead of the
-    // projection, and every row after it recomputes from the actual numbers — the table
-    // is always rebuilt from scratch from the stored payments, so this happens automatically.
+    // The schedule is fixed at loan creation (TermMonths + Frequency) — no more guessing
+    // how long the loan runs or how often it accrues. Once a real payment lands on one of
+    // those dates, that row uses the real payment instead of the projection, and every row
+    // after it recomputes from the actual numbers — the table is always rebuilt from scratch
+    // from the stored payments, so this happens automatically.
     // Interest = annualRate / 365 × days × openingBalance  (daily compound per PDF).
     // ClosingBalance = OpeningBalance + Interest − PaymentReceived
     // Principal repaid = PaymentReceived − Interest  (column C in PDF = B − E)
@@ -171,14 +172,15 @@ public class LoanService : ILoanService
             PaymentId: null,
             IsOverride: false));
 
-        var horizon = DateOnly.FromDateTime(DateTime.UtcNow).AddMonths(12);
+        var maturityDate = loan.StartDate.AddMonths(loan.TermMonths);
 
         var paymentsByDate = loan.Payments
             .OrderBy(p => p.PaymentDate)
             .GroupBy(p => p.PaymentDate)
             .ToDictionary(g => g.Key, g => g.Last());
 
-        var eventDates = new SortedSet<DateOnly>(MonthlyAccrualDates(loan.StartDate, horizon));
+        var eventDates = new SortedSet<DateOnly>(AccrualDates(loan.StartDate, maturityDate, loan.Frequency));
+        eventDates.Add(maturityDate); // always close the table out exactly at term end
         foreach (var date in paymentsByDate.Keys) eventDates.Add(date);
 
         decimal runningBalance = loan.Principal;
@@ -222,12 +224,37 @@ public class LoanService : ILoanService
         return rows;
     }
 
-    // Monthly anniversaries of startDate's day-of-month, strictly after startDate, through endDateInclusive.
-    // Short months clamp to the last day of that month (e.g. a 31st start posts on the 28th/29th/30th).
-    private static IEnumerable<DateOnly> MonthlyAccrualDates(DateOnly startDate, DateOnly endDateInclusive)
+    // Accrual dates strictly after startDate, through endDateInclusive (the loan's maturity
+    // date), spaced according to the loan's fixed Frequency.
+    private static IEnumerable<DateOnly> AccrualDates(DateOnly startDate, DateOnly endDateInclusive, string frequency)
+    {
+        return frequency switch
+        {
+            "Weekly" => FixedDayAccrualDates(startDate, endDateInclusive, 7),
+            "BiWeekly" => FixedDayAccrualDates(startDate, endDateInclusive, 14),
+            "Quarterly" => MonthlyAnniversaryAccrualDates(startDate, endDateInclusive, monthStep: 3),
+            _ => MonthlyAnniversaryAccrualDates(startDate, endDateInclusive, monthStep: 1),
+        };
+    }
+
+    // Every `intervalDays` days after startDate, through endDateInclusive.
+    private static IEnumerable<DateOnly> FixedDayAccrualDates(DateOnly startDate, DateOnly endDateInclusive, int intervalDays)
+    {
+        var date = startDate.AddDays(intervalDays);
+        while (date <= endDateInclusive)
+        {
+            yield return date;
+            date = date.AddDays(intervalDays);
+        }
+    }
+
+    // Anniversaries of startDate's day-of-month, every `monthStep` months, strictly after
+    // startDate, through endDateInclusive. Short months clamp to the last day of that month
+    // (e.g. a 31st start posts on the 28th/29th/30th).
+    private static IEnumerable<DateOnly> MonthlyAnniversaryAccrualDates(DateOnly startDate, DateOnly endDateInclusive, int monthStep)
     {
         var targetDay = startDate.Day;
-        var monthsAhead = 1;
+        var monthsAhead = monthStep;
 
         while (true)
         {
@@ -239,7 +266,7 @@ public class LoanService : ILoanService
             if (date > endDateInclusive) yield break;
 
             yield return date;
-            monthsAhead++;
+            monthsAhead += monthStep;
         }
     }
 
@@ -247,7 +274,7 @@ public class LoanService : ILoanService
 
     private static LoanDto ToDto(Loan l) => new(
         l.Id, l.LenderName, l.BorrowerName, l.Guarantors, l.Address,
-        l.Principal, l.InterestRate, l.StartDate, l.Notes, l.CreatedAt,
+        l.Principal, l.InterestRate, l.StartDate, l.TermMonths, l.Frequency, l.Notes, l.CreatedAt,
         l.Payments.OrderBy(p => p.PaymentDate).Select(ToPaymentDto).ToList());
 
     private static LoanPaymentDto ToPaymentDto(LoanPayment p) => new(

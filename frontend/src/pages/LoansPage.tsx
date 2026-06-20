@@ -11,8 +11,12 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
 import { Plus } from 'lucide-react'
 import { LoanDrawer } from '@/components/loans/LoanDrawer'
+import type { LoanFrequency } from '@/types/loans'
 
 const fmt = (v: number) =>
   '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -31,6 +35,8 @@ interface NewLoanForm {
   principal: string
   interestRate: string
   startDate: string
+  termMonths: string
+  frequency: LoanFrequency
   notes: string
 }
 
@@ -42,6 +48,8 @@ const emptyForm: NewLoanForm = {
   principal: '',
   interestRate: '18',
   startDate: new Date().toISOString().slice(0, 10),
+  termMonths: '12',
+  frequency: 'Monthly',
   notes: '',
 }
 
@@ -70,7 +78,7 @@ export function LoansPage() {
   const totalOutstanding = loans.reduce((s, l) => s + l.currentBalance, 0)
 
   const handleCreate = async () => {
-    if (!form.borrowerName || !form.principal || !form.interestRate || !form.startDate) return
+    if (!form.borrowerName || !form.principal || !form.interestRate || !form.startDate || !form.termMonths) return
     setSaving(true)
     try {
       await api.post('/api/loans', {
@@ -81,6 +89,8 @@ export function LoansPage() {
         principal: parseFloat(form.principal),
         interestRate: parseFloat(form.interestRate) / 100,
         startDate: form.startDate,
+        termMonths: parseInt(form.termMonths, 10),
+        frequency: form.frequency,
         notes: form.notes || null,
       })
       setNewOpen(false)
@@ -253,15 +263,39 @@ export function LoansPage() {
               <Input type="date" value={form.startDate} onChange={f('startDate')} />
             </div>
             <div className="space-y-1.5">
+              <Label>Loan Term (months) <span className="text-red-500">*</span></Label>
+              <Input type="number" min="1" value={form.termMonths} onChange={f('termMonths')} placeholder="12" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Payment Frequency <span className="text-red-500">*</span></Label>
+              <Select
+                value={form.frequency}
+                onValueChange={(v: LoanFrequency) => setForm(prev => ({ ...prev, frequency: v }))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Weekly">Weekly</SelectItem>
+                  <SelectItem value="BiWeekly">Bi-Weekly</SelectItem>
+                  <SelectItem value="Monthly">Monthly</SelectItem>
+                  <SelectItem value="Quarterly">Quarterly</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="col-span-2 space-y-1.5">
               <Label>Notes</Label>
               <Input value={form.notes} onChange={f('notes')} />
             </div>
           </div>
+          <p className="text-xs text-muted-foreground -mt-2">
+            Term and frequency determine the loan's accrual schedule and cannot be changed after the loan is created.
+          </p>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setNewOpen(false); setForm(emptyForm) }}>Cancel</Button>
             <Button
               onClick={handleCreate}
-              disabled={saving || !form.borrowerName || !form.principal || !form.startDate}
+              disabled={saving || !form.borrowerName || !form.principal || !form.startDate || !form.termMonths}
               className="bg-[#4648D4] hover:bg-[#3537b3]"
             >
               {saving ? 'Creating...' : 'Create Loan'}

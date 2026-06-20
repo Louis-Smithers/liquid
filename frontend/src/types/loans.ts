@@ -9,6 +9,8 @@ export interface LoanPaymentDto {
   createdAt: string
 }
 
+export type LoanFrequency = 'Weekly' | 'BiWeekly' | 'Monthly' | 'Quarterly'
+
 export interface LoanDto {
   id: string
   lenderName: string
@@ -18,6 +20,8 @@ export interface LoanDto {
   principal: number
   interestRate: number      // e.g. 0.18 for 18%
   startDate: string         // "YYYY-MM-DD"
+  termMonths: number        // fixed at creation, read-only after
+  frequency: LoanFrequency  // fixed at creation, read-only after
   notes: string | null
   createdAt: string
   payments: LoanPaymentDto[]
@@ -50,6 +54,8 @@ export interface LoanSummaryDto {
   principal: number
   interestRate: number
   startDate: string
+  termMonths: number
+  frequency: LoanFrequency
   currentBalance: number
   totalInterest: number
   paymentCount: number
