@@ -242,7 +242,7 @@ export function DebtorDrawer({ debtor, onClose }: DebtorDrawerProps) {
                                 <TableHead className="h-10 text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Invoice #</TableHead>
                                 <TableHead className="h-10 text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Client</TableHead>
                                 <TableHead className="h-10 text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Date</TableHead>
-                                <TableHead className="h-10 text-xs font-semibold text-[#6B7280] uppercase tracking-wider text-right">Amount</TableHead>
+                                <TableHead className="h-10 text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Amount</TableHead>
                                 <TableHead className="h-10 text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Status</TableHead>
                                 <TableHead className="h-10 text-xs font-semibold text-[#6B7280] uppercase tracking-wider text-center">Notes</TableHead>
                               </TableRow>
@@ -269,7 +269,7 @@ export function DebtorDrawer({ debtor, onClose }: DebtorDrawerProps) {
                                     </TableCell>
                                     <TableCell className="text-[#191C1E]">{inv.liquidClient}</TableCell>
                                     <TableCell className="text-[#6B7280]">{inv.date}</TableCell>
-                                    <TableCell className="text-right font-medium text-[#191C1E]">
+                                    <TableCell className="font-medium text-[#191C1E]">
                                       ${inv.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                     </TableCell>
                                     <TableCell>
@@ -348,7 +348,7 @@ export function DebtorDrawer({ debtor, onClose }: DebtorDrawerProps) {
                                 <TableHead className="h-10 text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Invoice #</TableHead>
                                 <TableHead className="h-10 text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Client</TableHead>
                                 <TableHead className="h-10 text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Date</TableHead>
-                                <TableHead className="h-10 text-xs font-semibold text-[#6B7280] uppercase tracking-wider text-right">Amount</TableHead>
+                                <TableHead className="h-10 text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Amount</TableHead>
                                 <TableHead className="h-10 text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Status</TableHead>
                                 <TableHead className="h-10 text-xs font-semibold text-[#6B7280] uppercase tracking-wider text-center">Notes</TableHead>
                               </TableRow>
@@ -377,7 +377,7 @@ export function DebtorDrawer({ debtor, onClose }: DebtorDrawerProps) {
                                     </TableCell>
                                     <TableCell className="text-[#191C1E]">{inv.liquidClient}</TableCell>
                                     <TableCell className="text-[#6B7280]">{inv.date}</TableCell>
-                                    <TableCell className="text-right font-medium text-[#191C1E]">
+                                    <TableCell className="font-medium text-[#191C1E]">
                                       ${inv.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                     </TableCell>
                                     <TableCell>

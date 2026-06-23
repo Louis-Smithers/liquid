@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { api } from '@/lib/api'
-import type { LoanTableDto, LoanTableRowDto } from '@/types/loans'
+import { describeFrequency, type LoanTableDto, type LoanTableRowDto } from '@/types/loans'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
@@ -384,7 +384,7 @@ export function LoanDrawer({ loanId, onClose }: LoanDrawerProps) {
                             <DetailRow label="Interest Rate" value={pct(loan.interestRate) + ' per year'} />
                             <DetailRow label="Start Date" value={loan.startDate} />
                             <DetailRow label="Loan Term" value={`${loan.termMonths} months`} />
-                            <DetailRow label="Payment Frequency" value={loan.frequency} />
+                            <DetailRow label="Compounding Interval" value={describeFrequency(loan.frequency, loan.customIntervalDays)} />
                             <DetailRow label="Notes" value={loan.notes} />
                           </div>
                         </>
@@ -427,8 +427,8 @@ export function LoanDrawer({ loanId, onClose }: LoanDrawerProps) {
                               <Input disabled value={`${loan.termMonths} months`} className="bg-slate-50" />
                             </div>
                             <div className="space-y-1.5">
-                              <Label className="text-muted-foreground">Payment Frequency</Label>
-                              <Input disabled value={loan.frequency} className="bg-slate-50" />
+                              <Label className="text-muted-foreground">Compounding Interval</Label>
+                              <Input disabled value={describeFrequency(loan.frequency, loan.customIntervalDays)} className="bg-slate-50" />
                             </div>
                             <div className="col-span-2 space-y-1.5">
                               <Label>Notes</Label>
@@ -436,7 +436,7 @@ export function LoanDrawer({ loanId, onClose }: LoanDrawerProps) {
                             </div>
                           </div>
                           <p className="text-xs text-muted-foreground mt-2">
-                            Loan term and payment frequency are set when the loan is created and can't be changed afterward.
+                            Loan term and compounding interval are set when the loan is created and can't be changed afterward.
                           </p>
                           <div className="flex gap-2 mt-6">
                             <Button onClick={saveDetails} disabled={detailsSaving} className="bg-[#4648D4] hover:bg-[#3537b3]">

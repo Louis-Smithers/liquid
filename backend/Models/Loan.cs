@@ -25,9 +25,15 @@ public class Loan
     // Fixed at creation; not editable afterward. Total length of the loan, in months.
     public int TermMonths { get; set; }
 
-    // Fixed at creation; not editable afterward. How often interest is posted/payments are due.
-    // One of: "Monthly", "BiWeekly", "Weekly", "Quarterly".
+    // Fixed at creation; not editable afterward. How often interest compounds (gets posted
+    // into the balance) — NOT a payment schedule, payments can land on any date.
+    // One of: "Monthly", "BiWeekly", "Weekly", "Quarterly", "Custom".
     public string Frequency { get; set; } = "Monthly";
+
+    // Only set when Frequency == "Custom". Number of days between compounding events.
+    // The "New Loan" UI collects this as "every X days/weeks" and converts weeks to days
+    // before saving, so storage and accrual math only ever deal in days.
+    public int? CustomIntervalDays { get; set; }
 
     public string? Notes { get; set; }
 

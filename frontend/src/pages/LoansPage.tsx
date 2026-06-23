@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { api } from '@/lib/api'
-import type { LoanSummaryDto } from '@/types/loans'
+import { describeFrequency, type LoanSummaryDto, type LoanPageDto } from '@/types/loans'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -14,9 +14,11 @@ import { Label } from '@/components/ui/label'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
-import { Plus } from 'lucide-react'
+import { Plus, ChevronLeft, ChevronRight } from 'lucide-react'
 import { LoanDrawer } from '@/components/loans/LoanDrawer'
 import type { LoanFrequency } from '@/types/loans'
+
+const PAGE_SIZE = 10
 
 const fmt = (v: number) =>
   '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -26,6 +28,15 @@ function balanceColor(current: number, principal: number) {
   if (current > principal * 0.5) return 'text-orange-600'
   return 'text-green-700'
 }
+
+interface LoanTotals {
+  totalPrincipal: number
+  totalOutstanding: number
+}
+
+type Cursor = { time: string; id: string }
+
+type CustomIntervalUnit = 'Days' | 'Weeks'
 
 interface NewLoanForm {
   borrowerName: string
@@ -37,6 +48,8 @@ interface NewLoanForm {
   startDate: string
   termMonths: string
   frequency: LoanFrequency
+  customIntervalValue: string
+  customIntervalUnit: CustomIntervalUnit
   notes: string
 }
 
@@ -50,6 +63,8 @@ const emptyForm: NewLoanForm = {
   startDate: new Date().toISOString().slice(0, 10),
   termMonths: '12',
   frequency: 'Monthly',
+  customIntervalValue: '10',
+  customIntervalUnit: 'Days',
   notes: '',
 }
 
@@ -60,27 +75,78 @@ export function LoansPage() {
   const [newOpen, setNewOpen] = useState(false)
   const [form, setForm] = useState<NewLoanForm>(emptyForm)
   const [saving, setSaving] = useState(false)
+  const [totals, setTotals] = useState<LoanTotals>({ totalPrincipal: 0, totalOutstanding: 0 })
 
-  const fetchLoans = async () => {
+  // Cursor-stack pagination: each entry is the cursor that produced the *next* page, so
+  // popping the stack and re-fetching with the previous entry walks backward.
+  const [cursorStack, setCursorStack] = useState<Cursor[]>([])
+  const [nextCursor, setNextCursor] = useState<Cursor | null>(null)
+
+  const fetchPage = useCallback(async (cursor: Cursor | null) => {
+    setLoading(true)
     try {
-      const res = await api.get<LoanSummaryDto[]>('/api/loans')
-      setLoans(res.data)
+      const params: Record<string, string> = { pageSize: String(PAGE_SIZE) }
+      if (cursor) {
+        params.cursorTime = cursor.time
+        params.cursorId = cursor.id
+      }
+      const res = await api.get<LoanPageDto>('/api/loans', { params })
+      setLoans(res.data.items)
+      setNextCursor(
+        res.data.nextCursorTime && res.data.nextCursorId
+          ? { time: res.data.nextCursorTime, id: res.data.nextCursorId }
+          : null
+      )
     } catch (err) {
       console.error(err)
     } finally {
       setLoading(false)
     }
+  }, [])
+
+  const fetchTotals = async () => {
+    try {
+      const res = await api.get<LoanTotals>('/api/loans/totals')
+      setTotals(res.data)
+    } catch (err) {
+      console.error(err)
+    }
   }
 
-  useEffect(() => { fetchLoans() }, [])
+  const refresh = () => {
+    setCursorStack([])
+    fetchPage(null)
+    fetchTotals()
+  }
 
-  const totalLoaned = loans.reduce((s, l) => s + l.principal, 0)
-  const totalOutstanding = loans.reduce((s, l) => s + l.currentBalance, 0)
+  useEffect(() => { refresh() }, [])
+
+  const goNext = () => {
+    if (!nextCursor) return
+    setCursorStack(prev => [...prev, nextCursor])
+    fetchPage(nextCursor)
+  }
+
+  const goPrev = () => {
+    if (cursorStack.length === 0) return
+    const prevStack = cursorStack.slice(0, -1)
+    setCursorStack(prevStack)
+    fetchPage(prevStack.length > 0 ? prevStack[prevStack.length - 1] : null)
+  }
+
+  const hasPrev = cursorStack.length > 0
 
   const handleCreate = async () => {
     if (!form.borrowerName || !form.principal || !form.interestRate || !form.startDate || !form.termMonths) return
+    if (form.frequency === 'Custom' && !form.customIntervalValue) return
     setSaving(true)
     try {
+      // Weeks are only a UI convenience — convert to days before sending, since the backend
+      // (and DB) only ever store a day count for "Custom".
+      const customIntervalDays = form.frequency === 'Custom'
+        ? parseInt(form.customIntervalValue, 10) * (form.customIntervalUnit === 'Weeks' ? 7 : 1)
+        : null
+
       await api.post('/api/loans', {
         borrowerName: form.borrowerName,
         lenderName: form.lenderName || 'Liquid Capital WGP Inc.',
@@ -91,11 +157,12 @@ export function LoansPage() {
         startDate: form.startDate,
         termMonths: parseInt(form.termMonths, 10),
         frequency: form.frequency,
+        customIntervalDays,
         notes: form.notes || null,
       })
       setNewOpen(false)
       setForm(emptyForm)
-      await fetchLoans()
+      refresh()
     } catch (err) {
       console.error(err)
     } finally {
@@ -122,12 +189,12 @@ export function LoansPage() {
           {/* Summary badges */}
           <div className="flex items-center gap-2 text-xs text-[#464554] bg-white border border-[#C7C4D7]/50 rounded px-3 py-1.5">
             <span className="font-medium">Total Loaned:</span>
-            <span className="font-bold text-[#191C1E]">{fmt(totalLoaned)}</span>
+            <span className="font-bold text-[#191C1E]">{fmt(totals.totalPrincipal)}</span>
           </div>
           <div className="flex items-center gap-2 text-xs text-[#464554] bg-white border border-[#C7C4D7]/50 rounded px-3 py-1.5">
             <span className="font-medium">Outstanding:</span>
-            <span className={`font-bold ${totalOutstanding > totalLoaned ? 'text-red-600' : 'text-[#191C1E]'}`}>
-              {fmt(totalOutstanding)}
+            <span className={`font-bold ${totals.totalOutstanding > totals.totalPrincipal ? 'text-red-600' : 'text-[#191C1E]'}`}>
+              {fmt(totals.totalOutstanding)}
             </span>
           </div>
           <Button
@@ -141,7 +208,7 @@ export function LoansPage() {
       </div>
 
       {/* Table */}
-      <div className="flex flex-col flex-1 bg-white border border-[rgba(199,196,215,0.5)] shadow-[0px_1px_3px_rgba(0,0,0,0.1)] rounded-lg overflow-hidden">
+      <div className="flex flex-col max-h-[520px] bg-white border border-[rgba(199,196,215,0.5)] shadow-[0px_1px_3px_rgba(0,0,0,0.1)] rounded-lg overflow-hidden">
         <div className="flex-1 overflow-auto">
           <Table className="min-w-[900px]">
             <TableHeader className="bg-[#F7F9FB] sticky top-0 z-10">
@@ -152,18 +219,19 @@ export function LoansPage() {
                 <TableHead className="h-10 text-xs font-semibold text-[#464554] uppercase tracking-[0.6px] text-right">Current Balance</TableHead>
                 <TableHead className="h-10 text-xs font-semibold text-[#464554] uppercase tracking-[0.6px] text-center">Rate</TableHead>
                 <TableHead className="h-10 text-xs font-semibold text-[#464554] uppercase tracking-[0.6px]">Start Date</TableHead>
-                <TableHead className="h-10 text-xs font-semibold text-[#464554] uppercase tracking-[0.6px] text-right w-[120px]">Payments</TableHead>
-                <TableHead className="h-10 text-xs font-semibold text-[#464554] uppercase tracking-[0.6px] text-right pr-4 w-[120px]">Actions</TableHead>
+                <TableHead className="h-10 text-xs font-semibold text-[#464554] uppercase tracking-[0.6px]">End Date</TableHead>
+                <TableHead className="h-10 text-xs font-semibold text-[#464554] uppercase tracking-[0.6px]">Interval</TableHead>
+                <TableHead className="h-10 text-xs font-semibold text-[#464554] uppercase tracking-[0.6px] text-right pr-4 w-[100px]">Payments</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-12 text-[#6B7280] text-sm">Loading loans...</TableCell>
+                  <TableCell colSpan={9} className="text-center py-12 text-[#6B7280] text-sm">Loading loans...</TableCell>
                 </TableRow>
               ) : loans.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-12 text-[#6B7280] text-sm">No loans found. Create one to get started.</TableCell>
+                  <TableCell colSpan={9} className="text-center py-12 text-[#6B7280] text-sm">No loans found. Create one to get started.</TableCell>
                 </TableRow>
               ) : (
                 loans.map(loan => (
@@ -197,25 +265,31 @@ export function LoansPage() {
                     <TableCell className="py-3 text-[13px] text-[#464554]">
                       {new Date(loan.startDate).toLocaleDateString('en-CA')}
                     </TableCell>
-                    <TableCell className="py-3 text-right text-[13px] text-[#464554]">{loan.paymentCount}</TableCell>
-                    <TableCell className="py-3 text-right pr-4">
-                      <button
-                        className="text-xs font-semibold tracking-[0.6px] text-[#4648D4] hover:text-[#3537b3] transition-colors"
-                        onClick={e => { e.stopPropagation(); setSelectedId(loan.id) }}
-                      >
-                        VIEW TABLE
-                      </button>
+                    <TableCell className="py-3 text-[13px] text-[#464554]">
+                      {new Date(loan.endDate).toLocaleDateString('en-CA')}
                     </TableCell>
+                    <TableCell className="py-3 text-[13px] text-[#464554]">
+                      {describeFrequency(loan.frequency, loan.customIntervalDays)}
+                    </TableCell>
+                    <TableCell className="py-3 text-right pr-4 text-[13px] text-[#464554]">{loan.paymentCount}</TableCell>
                   </TableRow>
                 ))
               )}
             </TableBody>
           </Table>
         </div>
-        <div className="border-t-2 border-[#C7C4D7] bg-[#F7F9FB] px-4 py-3">
+        <div className="flex items-center justify-between border-t-2 border-[#C7C4D7] bg-[#F7F9FB] px-4 py-2">
           <span className="text-xs font-semibold tracking-[0.6px] text-[#191C1E]">
-            {loans.length} LOAN{loans.length !== 1 ? 'S' : ''}
+            {loans.length} LOAN{loans.length !== 1 ? 'S' : ''} ON THIS PAGE
           </span>
+          <div className="flex items-center gap-1">
+            <Button variant="outline" size="sm" className="h-7 px-2" onClick={goPrev} disabled={!hasPrev || loading}>
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </Button>
+            <Button variant="outline" size="sm" className="h-7 px-2" onClick={goNext} disabled={!nextCursor || loading}>
+              <ChevronRight className="h-3.5 w-3.5" />
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -223,7 +297,7 @@ export function LoansPage() {
       {selectedId && (
         <LoanDrawer
           loanId={selectedId}
-          onClose={() => { setSelectedId(null); fetchLoans() }}
+          onClose={() => { setSelectedId(null); fetchPage(cursorStack.length > 0 ? cursorStack[cursorStack.length - 1] : null); fetchTotals() }}
         />
       )}
 
@@ -267,7 +341,7 @@ export function LoansPage() {
               <Input type="number" min="1" value={form.termMonths} onChange={f('termMonths')} placeholder="12" />
             </div>
             <div className="space-y-1.5">
-              <Label>Payment Frequency <span className="text-red-500">*</span></Label>
+              <Label>Compounding Interval <span className="text-red-500">*</span></Label>
               <Select
                 value={form.frequency}
                 onValueChange={(v: LoanFrequency) => setForm(prev => ({ ...prev, frequency: v }))}
@@ -280,22 +354,50 @@ export function LoansPage() {
                   <SelectItem value="BiWeekly">Bi-Weekly</SelectItem>
                   <SelectItem value="Monthly">Monthly</SelectItem>
                   <SelectItem value="Quarterly">Quarterly</SelectItem>
+                  <SelectItem value="Custom">Custom</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+            {form.frequency === 'Custom' && (
+              <div className="space-y-1.5">
+                <Label>Every <span className="text-red-500">*</span></Label>
+                <div className="flex gap-2">
+                  <Input
+                    type="number"
+                    min="1"
+                    className="w-20"
+                    value={form.customIntervalValue}
+                    onChange={f('customIntervalValue')}
+                    placeholder="10"
+                  />
+                  <Select
+                    value={form.customIntervalUnit}
+                    onValueChange={(v: CustomIntervalUnit) => setForm(prev => ({ ...prev, customIntervalUnit: v }))}
+                  >
+                    <SelectTrigger className="flex-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Days">Days</SelectItem>
+                      <SelectItem value="Weeks">Weeks</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            )}
             <div className="col-span-2 space-y-1.5">
               <Label>Notes</Label>
               <Input value={form.notes} onChange={f('notes')} />
             </div>
           </div>
           <p className="text-xs text-muted-foreground -mt-2">
-            Term and frequency determine the loan's accrual schedule and cannot be changed after the loan is created.
+            Term and compounding interval determine the loan's accrual schedule and cannot be changed after the loan is created.
           </p>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setNewOpen(false); setForm(emptyForm) }}>Cancel</Button>
             <Button
               onClick={handleCreate}
-              disabled={saving || !form.borrowerName || !form.principal || !form.startDate || !form.termMonths}
+              disabled={saving || !form.borrowerName || !form.principal || !form.startDate || !form.termMonths || (form.frequency === 'Custom' && !form.customIntervalValue)}
               className="bg-[#4648D4] hover:bg-[#3537b3]"
             >
               {saving ? 'Creating...' : 'Create Loan'}

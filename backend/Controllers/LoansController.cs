@@ -28,8 +28,20 @@ public class LoansController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<LoanSummaryDto>>> GetAll()
-        => Ok(await _service.GetAllAsync());
+    public async Task<ActionResult<LoanPageDto>> GetPage(
+        [FromQuery] string? cursorTime = null,
+        [FromQuery] string? cursorId = null,
+        [FromQuery] int pageSize = 25)
+    {
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        DateTimeOffset? parsedTime = DateTimeOffset.TryParse(cursorTime, out var ct) ? ct : null;
+        Guid? parsedId = Guid.TryParse(cursorId, out var ci) ? ci : null;
+        return Ok(await _service.GetPageAsync(parsedTime, parsedId, pageSize));
+    }
+
+    [HttpGet("totals")]
+    public async Task<ActionResult<LoanTotalsDto>> GetTotals()
+        => Ok(await _service.GetTotalsAsync());
 
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<LoanTableDto>> GetById(Guid id)

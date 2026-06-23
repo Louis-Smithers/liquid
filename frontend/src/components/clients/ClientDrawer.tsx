@@ -889,8 +889,8 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
                                         </TableHead>
                                         <SortableTableHead label="INVOICE" columnKey="originalInvoice" currentSortColumn={unprocessedSortCol} currentSortDirection={unprocessedSortDir} onSort={handleUnprocessedSort} className="h-9 text-[11px]" />
                                         <SortableTableHead label="DATE" columnKey="date" currentSortColumn={unprocessedSortCol} currentSortDirection={unprocessedSortDir} onSort={handleUnprocessedSort} className="h-9 text-[11px]" />
-                                        <SortableTableHead label="AGE" columnKey="_age" currentSortColumn={unprocessedSortCol} currentSortDirection={unprocessedSortDir} onSort={handleUnprocessedSort} className="h-9 text-[11px] text-right" />
-                                        <SortableTableHead label="AMOUNT" columnKey="amount" currentSortColumn={unprocessedSortCol} currentSortDirection={unprocessedSortDir} onSort={handleUnprocessedSort} className="h-9 text-[11px] text-right" />
+                                        <SortableTableHead label="AGE" columnKey="_age" currentSortColumn={unprocessedSortCol} currentSortDirection={unprocessedSortDir} onSort={handleUnprocessedSort} className="h-9 text-[11px]" />
+                                        <SortableTableHead label="AMOUNT" columnKey="amount" currentSortColumn={unprocessedSortCol} currentSortDirection={unprocessedSortDir} onSort={handleUnprocessedSort} className="h-9 text-[11px]" />
                                         <SortableTableHead label="DEBTOR" columnKey="debtorName" currentSortColumn={unprocessedSortCol} currentSortDirection={unprocessedSortDir} onSort={handleUnprocessedSort} className="h-9 text-[11px]" />
                                         <SortableTableHead label="STATUS" columnKey="status" currentSortColumn={unprocessedSortCol} currentSortDirection={unprocessedSortDir} onSort={handleUnprocessedSort} className="h-9 text-[11px]" />
                                         <SortableTableHead label="FLAG" columnKey="flagged" currentSortColumn={unprocessedSortCol} currentSortDirection={unprocessedSortDir} onSort={handleUnprocessedSort} className="h-9 text-[11px] text-center" />
@@ -920,8 +920,8 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
                                             </button>
                                           </TableCell>
                                           <TableCell className="text-muted-foreground py-1 text-xs">{inv.date}</TableCell>
-                                          <TableCell className="text-right py-1 text-xs text-muted-foreground tabular-nums">{computeAge(inv.date)}d</TableCell>
-                                          <TableCell className="text-right font-semibold py-1 text-xs tabular-nums">${inv.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                                          <TableCell className="py-1 text-xs text-muted-foreground tabular-nums">{computeAge(inv.date)}d</TableCell>
+                                          <TableCell className="font-semibold py-1 text-xs tabular-nums">${inv.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
                                           <TableCell className="py-1 text-xs">{inv.debtorName || '-'}</TableCell>
                                           <TableCell className="py-1">
                                             <Badge variant="outline" className={`text-[10px] h-5 px-1.5 border-transparent font-semibold ${
@@ -1007,8 +1007,8 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
                                         </TableHead>
                                         <SortableTableHead label="INVOICE" columnKey="originalInvoice" currentSortColumn={invoiceSortCol} currentSortDirection={invoiceSortDir} onSort={handleInvoiceSort} className="h-9 text-[11px]" />
                                         <SortableTableHead label="DATE" columnKey="date" currentSortColumn={invoiceSortCol} currentSortDirection={invoiceSortDir} onSort={handleInvoiceSort} className="h-9 text-[11px]" />
-                                        <SortableTableHead label="AGE" columnKey="_age" currentSortColumn={invoiceSortCol} currentSortDirection={invoiceSortDir} onSort={handleInvoiceSort} className="h-9 text-[11px] text-right" />
-                                        <SortableTableHead label="AMOUNT" columnKey="amount" currentSortColumn={invoiceSortCol} currentSortDirection={invoiceSortDir} onSort={handleInvoiceSort} className="h-9 text-[11px] text-right" />
+                                        <SortableTableHead label="AGE" columnKey="_age" currentSortColumn={invoiceSortCol} currentSortDirection={invoiceSortDir} onSort={handleInvoiceSort} className="h-9 text-[11px]" />
+                                        <SortableTableHead label="AMOUNT" columnKey="amount" currentSortColumn={invoiceSortCol} currentSortDirection={invoiceSortDir} onSort={handleInvoiceSort} className="h-9 text-[11px]" />
                                         <SortableTableHead label="DEBTOR" columnKey="debtorName" currentSortColumn={invoiceSortCol} currentSortDirection={invoiceSortDir} onSort={handleInvoiceSort} className="h-9 text-[11px]" />
                                         <SortableTableHead label="STATUS" columnKey="status" currentSortColumn={invoiceSortCol} currentSortDirection={invoiceSortDir} onSort={handleInvoiceSort} className="h-9 text-[11px]" />
                                         <SortableTableHead label="FLAG" columnKey="flagged" currentSortColumn={invoiceSortCol} currentSortDirection={invoiceSortDir} onSort={handleInvoiceSort} className="h-9 text-[11px] text-center" />
@@ -1038,8 +1038,8 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
                                             </button>
                                           </TableCell>
                                           <TableCell className="text-muted-foreground py-1 text-xs">{inv.date}</TableCell>
-                                          <TableCell className="text-right py-1 text-xs text-muted-foreground tabular-nums">{computeAge(inv.date)}d</TableCell>
-                                          <TableCell className="text-right font-semibold py-1 text-xs tabular-nums">${inv.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                                          <TableCell className="py-1 text-xs text-muted-foreground tabular-nums">{computeAge(inv.date)}d</TableCell>
+                                          <TableCell className="font-semibold py-1 text-xs tabular-nums">${inv.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
                                           <TableCell className="py-1 text-xs">{inv.debtorName || '-'}</TableCell>
                                           <TableCell className="py-1">
                                             <Badge variant="outline" className={`text-[10px] h-5 px-1.5 border-transparent font-semibold ${

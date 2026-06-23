@@ -12,7 +12,9 @@ public record LoanDto(
     decimal InterestRate,
     DateOnly StartDate,
     int TermMonths,
+    DateOnly EndDate,          // computed: StartDate + TermMonths, not stored
     string Frequency,
+    int? CustomIntervalDays,
     string? Notes,
     DateTimeOffset CreatedAt,
     List<LoanPaymentDto> Payments
@@ -52,7 +54,9 @@ public record LoanSummaryDto(
     decimal InterestRate,
     DateOnly StartDate,
     int TermMonths,
+    DateOnly EndDate,          // computed: StartDate + TermMonths, not stored
     string Frequency,
+    int? CustomIntervalDays,
     decimal CurrentBalance,    // latest closing balance from computed table
     decimal TotalInterest,     // sum of all accrued interest rows
     int PaymentCount
@@ -64,6 +68,20 @@ public record LoanTableDto(
     List<LoanTableRowDto> Rows,
     decimal TotalInterestAccrued,
     decimal CurrentBalance
+);
+
+// Cursor-paginated page of loan summaries, ordered newest-created first.
+public record LoanPageDto(
+    List<LoanSummaryDto> Items,
+    string? NextCursorTime,    // ISO-8601 created_at of last item
+    string? NextCursorId,      // loan id of last item
+    bool HasPrevious
+);
+
+// Portfolio-wide totals across all loans, independent of pagination.
+public record LoanTotalsDto(
+    decimal TotalPrincipal,
+    decimal TotalOutstanding
 );
 
 // ── Write DTOs ─────────────────────────────────────────────────────────────
@@ -78,6 +96,7 @@ public record CreateLoanDto(
     DateOnly StartDate,
     int TermMonths,
     string Frequency,
+    int? CustomIntervalDays,
     string? Notes
 );
 

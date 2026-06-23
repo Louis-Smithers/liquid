@@ -91,7 +91,7 @@ public class LoanPdfService : ILoanPdfService
                                 c.Item().Text(t =>
                                 {
                                     t.Span("Term: ").SemiBold();
-                                    t.Span($"{loan.TermMonths} months ({loan.Frequency})");
+                                    t.Span($"{loan.TermMonths} months ({DescribeFrequency(loan.Frequency, loan.CustomIntervalDays)})");
                                 });
                                 c.Item().PaddingTop(4).Text(t =>
                                 {
@@ -201,4 +201,8 @@ public class LoanPdfService : ILoanPdfService
 
     private static string Fmt(decimal v) =>
         v.ToString("N2", Money);
+
+    // "Custom" alone is meaningless on the printed table — show the actual day count instead.
+    private static string DescribeFrequency(string frequency, int? customIntervalDays) =>
+        frequency == "Custom" ? $"every {customIntervalDays ?? 30} days" : frequency;
 }

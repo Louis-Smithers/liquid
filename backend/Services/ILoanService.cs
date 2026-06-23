@@ -4,7 +4,8 @@ namespace Smithers.API.Services;
 
 public interface ILoanService
 {
-    Task<List<LoanSummaryDto>> GetAllAsync();
+    Task<LoanPageDto> GetPageAsync(DateTimeOffset? cursorTime, Guid? cursorId, int pageSize);
+    Task<LoanTotalsDto> GetTotalsAsync();
     Task<LoanTableDto?> GetTableAsync(Guid id);
     Task<LoanDto> CreateAsync(CreateLoanDto dto, Guid createdBy);
     Task<bool> UpdateAsync(Guid id, UpdateLoanDto dto);

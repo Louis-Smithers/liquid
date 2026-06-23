@@ -58,3 +58,6 @@ tests/
 backend/sql/create-users.sh
 backend/sql/legacy-supabase-schema.backup.sql
 backend/sql/CONNECT-DB.md
+
+# ── Old DB migration scratch tool (exploratory, not app code) ─────────────
+backend/tools/

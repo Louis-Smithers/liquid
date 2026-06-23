@@ -13,23 +13,61 @@ public class LoanService : ILoanService
 
     // ── Public API ─────────────────────────────────────────────────────────
 
-    public async Task<List<LoanSummaryDto>> GetAllAsync()
+    // Cursor pagination ordered newest-created first, mirroring InvoiceService.GetPageAsync.
+    // The frontend drives Prev/Next by keeping its own stack of (cursorTime, cursorId) pairs —
+    // this only ever needs to page forward from a given cursor.
+    public async Task<LoanPageDto> GetPageAsync(DateTimeOffset? cursorTime, Guid? cursorId, int pageSize)
     {
-        var loans = await _db.Loans
-            .Include(l => l.Payments)
+        var query = _db.Loans.Include(l => l.Payments).AsQueryable();
+
+        if (cursorTime.HasValue && cursorId.HasValue)
+            query = query.Where(l =>
+                l.CreatedAt < cursorTime.Value ||
+                (l.CreatedAt == cursorTime.Value && l.Id.CompareTo(cursorId.Value) < 0));
+
+        var loans = await query
             .OrderByDescending(l => l.CreatedAt)
+            .ThenByDescending(l => l.Id)
+            .Take(pageSize + 1)
             .ToListAsync();
 
-        return loans.Select(l =>
+        var hasMore = loans.Count > pageSize;
+        if (hasMore) loans.RemoveAt(loans.Count - 1);
+
+        var items = loans.Select(ToSummaryDto).ToList();
+
+        return new LoanPageDto(
+            items,
+            hasMore ? loans[^1].CreatedAt.ToString("O") : null,
+            hasMore ? loans[^1].Id.ToString() : null,
+            cursorTime.HasValue);
+    }
+
+    // Portfolio-wide totals, independent of the paginated list above.
+    public async Task<LoanTotalsDto> GetTotalsAsync()
+    {
+        var loans = await _db.Loans.Include(l => l.Payments).ToListAsync();
+
+        var totalPrincipal = loans.Sum(l => l.Principal);
+        var totalOutstanding = loans.Sum(l =>
         {
             var rows = ComputeRows(l);
-            var currentBalance = rows.Count > 0 ? rows[^1].ClosingBalance : l.Principal;
-            var totalInterest = rows.Sum(r => r.Interest);
-            return new LoanSummaryDto(
-                l.Id, l.LenderName, l.BorrowerName, l.Guarantors,
-                l.Principal, l.InterestRate, l.StartDate, l.TermMonths, l.Frequency,
-                currentBalance, totalInterest, l.Payments.Count);
-        }).ToList();
+            return rows.Count > 0 ? rows[^1].ClosingBalance : l.Principal;
+        });
+
+        return new LoanTotalsDto(totalPrincipal, totalOutstanding);
+    }
+
+    private static LoanSummaryDto ToSummaryDto(Loan l)
+    {
+        var rows = ComputeRows(l);
+        var currentBalance = rows.Count > 0 ? rows[^1].ClosingBalance : l.Principal;
+        var totalInterest = rows.Sum(r => r.Interest);
+        return new LoanSummaryDto(
+            l.Id, l.LenderName, l.BorrowerName, l.Guarantors,
+            l.Principal, l.InterestRate, l.StartDate, l.TermMonths, l.StartDate.AddMonths(l.TermMonths),
+            l.Frequency, l.CustomIntervalDays,
+            currentBalance, totalInterest, l.Payments.Count);
     }
 
     public async Task<LoanTableDto?> GetTableAsync(Guid id)
@@ -60,6 +98,7 @@ public class LoanService : ILoanService
             StartDate = dto.StartDate,
             TermMonths = dto.TermMonths,
             Frequency = dto.Frequency,
+            CustomIntervalDays = dto.CustomIntervalDays,
             Notes = dto.Notes,
             CreatedBy = createdBy,
         };
@@ -179,7 +218,7 @@ public class LoanService : ILoanService
             .GroupBy(p => p.PaymentDate)
             .ToDictionary(g => g.Key, g => g.Last());
 
-        var eventDates = new SortedSet<DateOnly>(AccrualDates(loan.StartDate, maturityDate, loan.Frequency));
+        var eventDates = new SortedSet<DateOnly>(AccrualDates(loan.StartDate, maturityDate, loan.Frequency, loan.CustomIntervalDays));
         eventDates.Add(maturityDate); // always close the table out exactly at term end
         foreach (var date in paymentsByDate.Keys) eventDates.Add(date);
 
@@ -225,14 +264,17 @@ public class LoanService : ILoanService
     }
 
     // Accrual dates strictly after startDate, through endDateInclusive (the loan's maturity
-    // date), spaced according to the loan's fixed Frequency.
-    private static IEnumerable<DateOnly> AccrualDates(DateOnly startDate, DateOnly endDateInclusive, string frequency)
+    // date), spaced according to the loan's fixed compounding Frequency.
+    // "Custom" reuses the same fixed-day-interval math as Weekly/BiWeekly — customIntervalDays
+    // is just whatever day count the New Loan form converted "every X days/weeks" into.
+    private static IEnumerable<DateOnly> AccrualDates(DateOnly startDate, DateOnly endDateInclusive, string frequency, int? customIntervalDays)
     {
         return frequency switch
         {
             "Weekly" => FixedDayAccrualDates(startDate, endDateInclusive, 7),
             "BiWeekly" => FixedDayAccrualDates(startDate, endDateInclusive, 14),
             "Quarterly" => MonthlyAnniversaryAccrualDates(startDate, endDateInclusive, monthStep: 3),
+            "Custom" => FixedDayAccrualDates(startDate, endDateInclusive, customIntervalDays ?? 30),
             _ => MonthlyAnniversaryAccrualDates(startDate, endDateInclusive, monthStep: 1),
         };
     }
@@ -274,7 +316,8 @@ public class LoanService : ILoanService
 
     private static LoanDto ToDto(Loan l) => new(
         l.Id, l.LenderName, l.BorrowerName, l.Guarantors, l.Address,
-        l.Principal, l.InterestRate, l.StartDate, l.TermMonths, l.Frequency, l.Notes, l.CreatedAt,
+        l.Principal, l.InterestRate, l.StartDate, l.TermMonths, l.StartDate.AddMonths(l.TermMonths),
+        l.Frequency, l.CustomIntervalDays, l.Notes, l.CreatedAt,
         l.Payments.OrderBy(p => p.PaymentDate).Select(ToPaymentDto).ToList());
 
     private static LoanPaymentDto ToPaymentDto(LoanPayment p) => new(
