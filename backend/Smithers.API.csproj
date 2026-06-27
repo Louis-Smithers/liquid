@@ -31,4 +31,11 @@
     </None>
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Exclude scratch/migration tools that live under the backend tree but are not part of this project -->
+    <Compile Remove="tools\**\*.cs" />
+    <EmbeddedResource Remove="tools\**" />
+    <None Remove="tools\**" />
+  </ItemGroup>
+
 </Project>
