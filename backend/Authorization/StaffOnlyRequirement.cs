@@ -16,7 +16,7 @@ public class StaffOnlyHandler : AuthorizationHandler<StaffOnlyRequirement>
 
     protected override Task HandleRequirementAsync(AuthorizationHandlerContext context, StaffOnlyRequirement requirement)
     {
-        if (_currentUser.IsAdmin || _currentUser.Role == "user")
+        if (_currentUser.IsStaff)
             context.Succeed(requirement);
 
         return Task.CompletedTask;

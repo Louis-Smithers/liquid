@@ -23,6 +23,7 @@ public class AppDbContext : DbContext
     public DbSet<StagedDocument> StagedDocuments => Set<StagedDocument>();
     public DbSet<Loan> Loans => Set<Loan>();
     public DbSet<LoanPayment> LoanPayments => Set<LoanPayment>();
+    public DbSet<BrokerSubmission> BrokerSubmissions => Set<BrokerSubmission>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

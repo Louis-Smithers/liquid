@@ -777,6 +777,11 @@ export function NSQueuePage() {
               <h1 className="text-2xl font-semibold tracking-tight">{detailSheet.displayName}</h1>
               <div className="flex items-center space-x-2 mt-1">
                 <Badge variant="secondary">{detailSheet.clientShortcode}</Badge>
+                {(detailSheet as any).submittedForReviewByClient && (
+                  <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                    Client Review Requested
+                  </Badge>
+                )}
                 <Badge variant="outline" className={isDraft ? 'bg-[#FEF9C3] text-[#A16207]' : 'bg-[#DCFCE7] text-[#15803D]'}>
                   {detailSheet.status}
                 </Badge>
@@ -1041,9 +1046,16 @@ export function NSQueuePage() {
                   <TableCell className="text-right font-medium">{q.itemCount}</TableCell>
                   <TableCell className="text-right font-semibold">${q.totalAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</TableCell>
                   <TableCell className="text-center">
-                    <Badge variant="outline" className={q.status === 'Draft' ? 'bg-[#FEF9C3] text-[#A16207]' : 'bg-[#DCFCE7] text-[#15803D]'}>
-                      {q.status}
-                    </Badge>
+                    <div className="flex items-center justify-center gap-1.5">
+                      <Badge variant="outline" className={q.status === 'Draft' ? 'bg-[#FEF9C3] text-[#A16207]' : 'bg-[#DCFCE7] text-[#15803D]'}>
+                        {q.status}
+                      </Badge>
+                      {(q as any).submittedForReviewByClient && (
+                        <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-xs">
+                          Client Review
+                        </Badge>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell className="text-center">
                     {q.isShared ? <span title="Shared"><Unlock className="h-4 w-4 mx-auto text-muted-foreground" /></span> : <span title="Private"><Lock className="h-4 w-4 mx-auto text-muted-foreground" /></span>}

@@ -39,9 +39,9 @@ public class UsersController : ControllerBase
     public async Task<IActionResult> ApproveRequest(Guid id, [FromBody] ApproveRequestDto dto)
     {
         if (!IsAdmin()) return Forbid();
-        var role = dto.Role ?? "user";
-        if (role != "user" && role != "client")
-            return BadRequest("Role must be 'user' or 'client'.");
+        var role = dto.Role ?? "staff";
+        if (role != "staff" && role != "client" && role != "external" && role != "admin")
+            return BadRequest("Role must be 'staff', 'client', 'external', or 'admin'.");
         var result = await _adminService.ApproveRequestAsync(id, dto.TempPassword, role, dto.ClientShortcode);
         if (!result) return BadRequest("Could not approve request. If role is 'client', a valid client shortcode is required.");
         return Ok(new { message = "Request approved." });
@@ -73,10 +73,70 @@ public class UsersController : ControllerBase
     {
         var userId = GetUserId();
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
-        
+
         var result = await _adminService.ClearMustChangePasswordAsync(userId);
         if (!result) return BadRequest("Could not update user metadata.");
         return Ok(new { message = "Must change password flag cleared." });
+    }
+
+    // User CRUD (admin only)
+    [HttpGet("admin/users")]
+    [Authorize]
+    public async Task<IActionResult> ListUsers()
+    {
+        if (!IsAdmin()) return Forbid();
+        var users = await _adminService.ListUsersAsync();
+        return Ok(users);
+    }
+
+    [HttpPost("admin/users")]
+    [Authorize]
+    public async Task<IActionResult> CreateUser([FromBody] CreateUserDto dto)
+    {
+        if (!IsAdmin()) return Forbid();
+        if (dto.Role != "staff" && dto.Role != "client" && dto.Role != "external" && dto.Role != "admin")
+            return BadRequest("Role must be 'staff', 'client', 'external', or 'admin'.");
+        if (dto.Role == "client")
+        {
+            if (dto.NewClient != null)
+            {
+                if (string.IsNullOrWhiteSpace(dto.NewClient.Shortcode))
+                    return BadRequest("New client shortcode is required.");
+                if (string.IsNullOrWhiteSpace(dto.NewClient.CadenceName))
+                    return BadRequest("New client name is required.");
+            }
+            else if (string.IsNullOrWhiteSpace(dto.ClientShortcode))
+            {
+                return BadRequest("Either an existing client shortcode or a new client definition is required for the client role.");
+            }
+        }
+        var result = await _adminService.CreateUserAsync(dto);
+        if (!result) return BadRequest("Could not create user.");
+        return Ok(new { message = "User created." });
+    }
+
+    [HttpPut("admin/users/{userId}")]
+    [Authorize]
+    public async Task<IActionResult> UpdateUser(string userId, [FromBody] UpdateUserDto dto)
+    {
+        if (!IsAdmin()) return Forbid();
+        if (dto.Role != "staff" && dto.Role != "client" && dto.Role != "external" && dto.Role != "admin")
+            return BadRequest("Role must be 'staff', 'client', 'external', or 'admin'.");
+        if (dto.Role == "client" && string.IsNullOrWhiteSpace(dto.ClientShortcode))
+            return BadRequest("Client shortcode is required for client role.");
+        var result = await _adminService.UpdateUserAsync(userId, dto);
+        if (!result) return BadRequest("Could not update user.");
+        return Ok(new { message = "User updated." });
+    }
+
+    [HttpDelete("admin/users/{userId}")]
+    [Authorize]
+    public async Task<IActionResult> DeleteUser(string userId)
+    {
+        if (!IsAdmin()) return Forbid();
+        var result = await _adminService.DeleteUserAsync(userId);
+        if (!result) return BadRequest("Could not delete user.");
+        return Ok(new { message = "User deleted." });
     }
 
     private string? GetUserId()
@@ -93,17 +153,15 @@ public class UsersController : ControllerBase
             {
                 var doc = JsonDocument.Parse(appMetadataClaim);
                 if (doc.RootElement.TryGetProperty("role", out var roleElement) && roleElement.GetString() == "admin")
-                {
                     return true;
-                }
             }
             catch { }
         }
-        
+
         var roleClaim = User.FindFirst("role")?.Value;
         if (roleClaim == "admin") return true;
 
-        var customRoleClaim = User.FindFirst("user_role")?.Value; // Fallback
+        var customRoleClaim = User.FindFirst("user_role")?.Value;
         if (customRoleClaim == "admin") return true;
 
         return false;

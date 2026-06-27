@@ -15,4 +15,8 @@ public interface INotificationSheetService
     Task<bool> UpdateAsync(Guid sheetId, UpdateNotificationSheetDto dto, Guid userId);
     Task<bool> DeleteAsync(Guid sheetId, Guid userId);
     Task<int> GetDraftItemCountAsync(Guid userId);
+    Task<NotificationSheetDto> GetOrCreateClientDraftAsync();
+    Task<NotificationSheetItemDto> ClientAddItemAsync(string invoiceId, decimal includedAmount);
+    Task<bool> ClientRemoveItemAsync(Guid sheetId, Guid itemId);
+    Task<bool> ClientSubmitForReviewAsync();
 }

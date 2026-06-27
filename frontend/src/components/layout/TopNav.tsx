@@ -15,6 +15,8 @@ export function TopNav() {
   const { user, role, clientShortcode, signOut } = useAuth()
 
   const isClient = role === 'client'
+  const isExternal = role === 'external'
+  const isAdmin = role === 'admin'
 
   const staffNavItems = [
     { name: 'Clients', path: '/clients' },
@@ -22,7 +24,12 @@ export function TopNav() {
     { name: 'Loans', path: '/loans' },
     { name: 'Scan Invoice', path: '/scan' },
     { name: 'Import Queue', path: '/queue' },
-    ...(role === 'admin' ? [{ name: 'Admin', path: '/admin' }] : []),
+    { name: 'Broker Submissions', path: '/broker-oversight' },
+  ]
+
+  const adminNavItems = [
+    { name: 'User Management', path: '/admin' },
+    { name: 'Broker Submissions', path: '/broker-oversight' },
   ]
 
   const clientNavItems = [
@@ -30,15 +37,23 @@ export function TopNav() {
     { name: 'My Invoices', path: `/portal/invoices` },
     { name: 'My Debtors', path: `/portal/debtors` },
     { name: 'Aging Report', path: `/portal/aging` },
+    { name: 'NS Queue', path: `/portal/ns` },
   ]
 
-  const navItems = isClient ? clientNavItems : staffNavItems
+  const externalNavItems = [
+    { name: 'My Submissions', path: '/broker' },
+  ]
+
+  const navItems = isClient ? clientNavItems
+    : isAdmin ? adminNavItems
+    : isExternal ? externalNavItems
+    : staffNavItems
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="w-full flex h-14 items-center px-8">
         <div className="mr-4 flex">
-          <Link to={isClient ? '/portal' : '/'} className="mr-6 flex items-center space-x-2">
+          <Link to={isClient ? '/portal' : isAdmin ? '/admin' : isExternal ? '/broker' : '/clients'} className="mr-6 flex items-center space-x-2">
             <span className="hidden font-bold sm:inline-block tracking-tight text-lg">
               Smithers
             </span>
@@ -56,7 +71,7 @@ export function TopNav() {
                 {item.name}
               </Link>
             ))}
-            {!isClient && (
+            {role === 'staff' && (
               <Link
                 to="/ns-queue"
                 className={cn(
@@ -75,7 +90,7 @@ export function TopNav() {
           </nav>
         </div>
         <div className="flex flex-1 items-center justify-end space-x-4">
-          {!isClient && <Omnibar />}
+          {role === 'staff' && <Omnibar />}
           <FeedbackButton />
           {user && (
             <DropdownMenu>
@@ -91,8 +106,11 @@ export function TopNav() {
                       <p className="font-medium">{user.user_metadata.first_name} {user.user_metadata.last_name}</p>
                     )}
                     <p className="w-[200px] truncate text-sm text-muted-foreground">{user.email}</p>
+                    {role && (
+                      <p className="text-xs text-muted-foreground capitalize">{role === 'external' ? 'Broker' : role}</p>
+                    )}
                     {isClient && clientShortcode && (
-                      <p className="text-xs text-muted-foreground">Client: {clientShortcode}</p>
+                      <p className="text-xs text-muted-foreground">Account: {clientShortcode}</p>
                     )}
                   </div>
                 </div>

@@ -25,6 +25,7 @@ public class NotificationSheetDto
     public decimal OtherAdjustments { get; set; }
     public decimal AdvanceAmount { get; set; }
     public string? Notes { get; set; }
+    public bool SubmittedForReviewByClient { get; set; }
 
     public string? GcsNsObjectPath { get; set; }
     public string? GcsIntakeObjectPath { get; set; }
@@ -76,6 +77,13 @@ public class UpdateNotificationSheetDto
     public decimal? ReservesToHoldBack { get; set; }
     public decimal? OtherAdjustments { get; set; }
     public decimal? AdvanceAmount { get; set; }
+}
+
+public class ClientAddItemDto
+{
+    [Required]
+    public string InvoiceId { get; set; } = null!;
+    public decimal IncludedAmount { get; set; }
 }
 
 public class SubmitNsResultDto

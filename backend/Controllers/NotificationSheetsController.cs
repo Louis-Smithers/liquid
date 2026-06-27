@@ -200,6 +200,45 @@ public class NotificationSheetsController : ControllerBase
         return url is null ? NotFound("Failed to generate signed URL.") : Ok(new { signedUrl = url });
     }
 
+    // Client-facing NS endpoints (role === 'client')
+    [HttpGet("mine")]
+    public async Task<ActionResult<NotificationSheetDto>> GetClientDraft()
+    {
+        try { return Ok(await _service.GetOrCreateClientDraftAsync()); }
+        catch (UnauthorizedAccessException) { return Forbid(); }
+    }
+
+    [HttpPost("mine/items")]
+    public async Task<ActionResult<NotificationSheetItemDto>> ClientAddItem([FromBody] ClientAddItemDto dto)
+    {
+        try { return Ok(await _service.ClientAddItemAsync(dto.InvoiceId, dto.IncludedAmount)); }
+        catch (UnauthorizedAccessException) { return Forbid(); }
+        catch (ArgumentException ex) { return BadRequest(ex.Message); }
+    }
+
+    [HttpDelete("mine/items/{itemId:guid}")]
+    public async Task<ActionResult> ClientRemoveItem(Guid itemId, [FromQuery] Guid sheetId)
+    {
+        try
+        {
+            var removed = await _service.ClientRemoveItemAsync(sheetId, itemId);
+            return removed ? NoContent() : NotFound();
+        }
+        catch (UnauthorizedAccessException) { return Forbid(); }
+    }
+
+    [HttpPost("mine/submit-for-review")]
+    public async Task<ActionResult> ClientSubmitForReview()
+    {
+        try
+        {
+            var result = await _service.ClientSubmitForReviewAsync();
+            return result ? Ok(new { message = "Submitted for staff review." }) : NotFound("No active draft found.");
+        }
+        catch (UnauthorizedAccessException) { return Forbid(); }
+        catch (InvalidOperationException ex) { return BadRequest(ex.Message); }
+    }
+
     [HttpPost("{id:guid}/intake/regenerate")]
     [Authorize(Policy = "StaffOnly")]
     public async Task<ActionResult<SubmitNsResultDto>> RegenerateIntake(Guid id, [FromServices] INsIntakeService intakeService)

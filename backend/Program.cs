@@ -46,6 +46,7 @@ builder.Services.AddScoped<IGcsService, GcsService>();
 builder.Services.AddHttpClient<IFeedbackService, FeedbackService>();
 builder.Services.AddScoped<ILoanService, LoanService>();
 builder.Services.AddScoped<ILoanPdfService, LoanPdfService>();
+builder.Services.AddScoped<IBrokerService, BrokerService>();
 builder.Services.AddHostedService<StagingCleanupService>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();

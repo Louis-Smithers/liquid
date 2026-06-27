@@ -8,10 +8,12 @@ namespace Smithers.API.Services;
 public class NotificationSheetService : INotificationSheetService
 {
     private readonly AppDbContext _context;
+    private readonly ICurrentUserService _currentUser;
 
-    public NotificationSheetService(AppDbContext context)
+    public NotificationSheetService(AppDbContext context, ICurrentUserService currentUser)
     {
         _context = context;
+        _currentUser = currentUser;
     }
 
     public async Task<IEnumerable<NotificationSheetDto>> GetHistoryByClientAsync(string shortcode)
@@ -168,6 +170,107 @@ public class NotificationSheetService : INotificationSheetService
             .CountAsync();
     }
 
+    public async Task<NotificationSheetDto> GetOrCreateClientDraftAsync()
+    {
+        var shortcode = _currentUser.ClientShortcode
+            ?? throw new UnauthorizedAccessException("No client shortcode on token.");
+
+        var sheet = await _context.NotificationSheets
+            .Include(s => s.Items).ThenInclude(i => i.Invoice).ThenInclude(i => i.Debtor)
+            .Where(s => s.ClientShortcode == shortcode && s.Status == "Draft")
+            .OrderByDescending(s => s.CreatedAt)
+            .FirstOrDefaultAsync();
+
+        if (sheet != null) return MapToDto(sheet);
+
+        sheet = new NotificationSheet
+        {
+            Id = Guid.NewGuid(),
+            ClientShortcode = shortcode,
+            Status = "Draft",
+            IsShared = false,
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        _context.NotificationSheets.Add(sheet);
+        await _context.SaveChangesAsync();
+        return MapToDto(sheet);
+    }
+
+    public async Task<NotificationSheetItemDto> ClientAddItemAsync(string invoiceId, decimal includedAmount)
+    {
+        var shortcode = _currentUser.ClientShortcode
+            ?? throw new UnauthorizedAccessException("No client shortcode on token.");
+
+        var invoice = await _context.Invoices.Include(i => i.Debtor).FirstOrDefaultAsync(i => i.InvoiceId == invoiceId)
+            ?? throw new ArgumentException("Invoice not found.");
+        if (invoice.LiquidClient != shortcode)
+            throw new UnauthorizedAccessException("Invoice does not belong to your account.");
+
+        var draft = await GetOrCreateClientDraftAsync();
+        var sheetId = draft.Id;
+
+        var exists = await _context.NotificationSheetItems.AnyAsync(i => i.NotificationSheetId == sheetId && i.InvoiceId == invoiceId);
+        if (exists) throw new ArgumentException("Invoice already in queue.");
+
+        var item = new NotificationSheetItem
+        {
+            Id = Guid.NewGuid(),
+            NotificationSheetId = sheetId,
+            InvoiceId = invoiceId,
+            IncludedAmount = includedAmount,
+            Invoice = invoice
+        };
+        _context.NotificationSheetItems.Add(item);
+        await _context.SaveChangesAsync();
+
+        return new NotificationSheetItemDto
+        {
+            Id = item.Id,
+            NotificationSheetId = item.NotificationSheetId,
+            InvoiceId = item.InvoiceId,
+            InvoiceNumber = invoice.OriginalInvoice,
+            DebtorName = invoice.DebtorName ?? invoice.Debtor?.Name ?? "Unknown",
+            Date = new DateTimeOffset(invoice.Date, TimeOnly.MinValue, TimeSpan.Zero),
+            IncludedAmount = item.IncludedAmount,
+            HasDocument = !string.IsNullOrEmpty(invoice.DocumentPath)
+        };
+    }
+
+    public async Task<bool> ClientRemoveItemAsync(Guid sheetId, Guid itemId)
+    {
+        var shortcode = _currentUser.ClientShortcode
+            ?? throw new UnauthorizedAccessException("No client shortcode on token.");
+
+        var sheet = await _context.NotificationSheets.FindAsync(sheetId);
+        if (sheet == null || sheet.ClientShortcode != shortcode) return false;
+
+        var item = await _context.NotificationSheetItems.FirstOrDefaultAsync(i => i.NotificationSheetId == sheetId && i.Id == itemId);
+        if (item == null) return false;
+
+        _context.NotificationSheetItems.Remove(item);
+        await _context.SaveChangesAsync();
+        return true;
+    }
+
+    public async Task<bool> ClientSubmitForReviewAsync()
+    {
+        var shortcode = _currentUser.ClientShortcode
+            ?? throw new UnauthorizedAccessException("No client shortcode on token.");
+
+        var sheet = await _context.NotificationSheets
+            .Where(s => s.ClientShortcode == shortcode && s.Status == "Draft")
+            .OrderByDescending(s => s.CreatedAt)
+            .FirstOrDefaultAsync();
+
+        if (sheet == null) return false;
+        if (!await _context.NotificationSheetItems.AnyAsync(i => i.NotificationSheetId == sheet.Id))
+            throw new InvalidOperationException("Cannot submit an empty queue.");
+
+        sheet.SubmittedForReviewByClient = true;
+        await _context.SaveChangesAsync();
+        return true;
+    }
+
     internal static NotificationSheetDto MapToDto(NotificationSheet sheet)
     {
         var totalAmount = sheet.Items.Sum(i => i.IncludedAmount);
@@ -196,6 +299,7 @@ public class NotificationSheetService : INotificationSheetService
             OtherAdjustments = sheet.OtherAdjustments,
             AdvanceAmount = sheet.AdvanceAmount,
             Notes = sheet.Notes,
+            SubmittedForReviewByClient = sheet.SubmittedForReviewByClient,
             Items = sheet.Items.Select(i => new NotificationSheetItemDto
             {
                 Id = i.Id,

@@ -8,7 +8,9 @@ public interface ICurrentUserService
     string? UserId { get; }
     string Role { get; }
     bool IsAdmin { get; }
+    bool IsStaff { get; }
     bool IsClient { get; }
+    bool IsExternal { get; }
     string? ClientShortcode { get; }
 }
 
@@ -35,15 +37,17 @@ public class CurrentUserService : ICurrentUserService
                 appMetadata.TryGetValue("role", out var roleEl) &&
                 ((JsonElement)roleEl).ValueKind == JsonValueKind.String)
             {
-                return ((JsonElement)roleEl).GetString() ?? "user";
+                return ((JsonElement)roleEl).GetString() ?? "staff";
             }
 
-            return User?.FindFirstValue("role") ?? "user";
+            return User?.FindFirstValue("role") ?? "staff";
         }
     }
 
     public bool IsAdmin => Role == "admin";
+    public bool IsStaff => Role == "staff";
     public bool IsClient => Role == "client";
+    public bool IsExternal => Role == "external";
 
     public string? ClientShortcode
     {

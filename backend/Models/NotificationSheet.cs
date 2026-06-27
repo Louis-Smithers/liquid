@@ -28,7 +28,8 @@ public class NotificationSheet
     public decimal AdvanceAmount { get; set; }
 
     public string? Notes { get; set; }
-    
+    public bool SubmittedForReviewByClient { get; set; } = false;
+
     public string? GcsNsObjectPath { get; set; }
     public string? GcsIntakeObjectPath { get; set; }
     
