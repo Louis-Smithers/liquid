@@ -24,6 +24,7 @@ public class AppDbContext : DbContext
     public DbSet<Loan> Loans => Set<Loan>();
     public DbSet<LoanPayment> LoanPayments => Set<LoanPayment>();
     public DbSet<BrokerSubmission> BrokerSubmissions => Set<BrokerSubmission>();
+    public DbSet<DebtorMergeAudit> DebtorMergeAudits => Set<DebtorMergeAudit>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -134,5 +135,11 @@ public class AppDbContext : DbContext
             .WithMany(l => l.Payments)
             .HasForeignKey(p => p.LoanId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        // DebtorMergeAudit — deliberately no FKs (mirrors ImportReviewQueue) so the log
+        // survives future debtor edits/deletes.
+        modelBuilder.Entity<DebtorMergeAudit>()
+            .Property(a => a.PerformedAt)
+            .HasDefaultValueSql("now()");
     }
 }

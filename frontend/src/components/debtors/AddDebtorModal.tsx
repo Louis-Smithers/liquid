@@ -25,7 +25,6 @@ export function AddDebtorModal({ onDebtorAdded }: AddDebtorModalProps) {
   const [loading, setLoading] = useState(false)
   const [formData, setFormData] = useState({
     name: '',
-    cadenceName: '',
     group: 'Active',
     active: true
   })
@@ -37,7 +36,7 @@ export function AddDebtorModal({ onDebtorAdded }: AddDebtorModalProps) {
       const response = await api.post<Debtor>('/api/debtors', formData)
       onDebtorAdded(response.data)
       setOpen(false)
-      setFormData({ name: '', cadenceName: '', group: 'Active', active: true })
+      setFormData({ name: '', group: 'Active', active: true })
     } catch (error) {
       console.error("Failed to add debtor:", error)
     } finally {
@@ -75,29 +74,21 @@ export function AddDebtorModal({ onDebtorAdded }: AddDebtorModalProps) {
               />
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="cadenceName" className="text-right">
-                Cadence Name
-              </Label>
-              <Input
-                id="cadenceName"
-                value={formData.cadenceName}
-                onChange={(e) => setFormData({ ...formData, cadenceName: e.target.value })}
-                className="col-span-3"
-                placeholder="e.g. Wayne Ent"
-              />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="group" className="text-right">
-                Group
+              <Label
+                htmlFor="group"
+                className="text-right cursor-help"
+                title="Debtors added by an n8n import start as Under Review until vetted."
+              >
+                Under Review / Approved
               </Label>
               <div className="col-span-3">
                 <Select value={formData.group} onValueChange={(value) => setFormData({ ...formData, group: value })}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select group" />
+                    <SelectValue placeholder="Select status" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Active">Active</SelectItem>
-                    <SelectItem value="Review">Review</SelectItem>
+                    <SelectItem value="Active">Approved</SelectItem>
+                    <SelectItem value="Review">Under Review</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

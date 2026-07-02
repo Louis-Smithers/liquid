@@ -4,7 +4,9 @@ namespace Smithers.API.Services;
 
 public interface IInvoiceService
 {
-    Task<InvoicePageDto> GetPageAsync(string? search, string? status, DateTimeOffset? cursorTime, string? cursorId, int pageSize);
+    Task<InvoicePageDto> GetPageAsync(
+        string? search, string? status, DateTimeOffset? cursorTime, string? cursorId, int pageSize,
+        string? client = null, Guid? debtorId = null);
     Task<IEnumerable<InvoiceDto>> GetByClientAsync(string shortcode);
     Task<IEnumerable<InvoiceDto>> GetByDebtorAsync(Guid debtorId);
     Task<InvoiceDto?> GetByIdAsync(string invoiceId);

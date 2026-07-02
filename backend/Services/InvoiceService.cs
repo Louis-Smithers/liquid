@@ -16,7 +16,7 @@ public class InvoiceService : IInvoiceService
         _currentUser = currentUser;
     }
 
-    private static InvoiceDto ToDto(Invoice p, bool isProcessed = false) => new(
+    private static InvoiceDto ToDto(Invoice p, bool isProcessed = false, bool onAnyNs = false, string? onNsId = null) => new(
         p.InvoiceId,
         p.OriginalInvoice,
         p.Date,
@@ -39,7 +39,9 @@ public class InvoiceService : IInvoiceService
         p.ProcessedTime,
         p.Verified,
         p.Source,
-        isProcessed
+        isProcessed,
+        onAnyNs,
+        onNsId
     );
 
     // An invoice is "Processed" once it's on a Notification Sheet that has actually been
@@ -57,12 +59,24 @@ public class InvoiceService : IInvoiceService
     private static bool IsProcessed(Invoice p, HashSet<string> submittedIds) =>
         p.Source == "Import" || submittedIds.Contains(p.InvoiceId);
 
+    // Membership on ANY Notification Sheet (Draft or Submitted). Used to lock an invoice from
+    // being added to a second NS while it's still sitting on a Draft (which IsProcessed ignores).
+    // Maps invoiceId -> the NS id it's already on (first match wins if somehow on more than one).
+    private async Task<Dictionary<string, string>> GetOnAnyNsInvoiceIdsAsync(IEnumerable<string> invoiceIds) =>
+        (await _context.NotificationSheetItems
+            .Where(i => invoiceIds.Contains(i.InvoiceId))
+            .Select(i => new { i.InvoiceId, NsId = i.NotificationSheetId.ToString() })
+            .ToListAsync())
+        .GroupBy(x => x.InvoiceId)
+        .ToDictionary(g => g.Key, g => g.First().NsId);
+
     private static InvoiceNoteDto ToNoteDto(InvoiceNote n) => new(n.Id, n.InvoiceId, n.Text, n.CreatedBy, n.CreatedAt);
 
     public async Task<InvoicePageDto> GetPageAsync(
         string? search, string? status,
         DateTimeOffset? cursorTime, string? cursorId,
-        int pageSize)
+        int pageSize,
+        string? client = null, Guid? debtorId = null)
     {
         var query = _context.Invoices
             .Include(p => p.Debtor)
@@ -70,6 +84,12 @@ public class InvoiceService : IInvoiceService
 
         if (_currentUser.IsClient)
             query = query.Where(p => p.LiquidClient == _currentUser.ClientShortcode);
+
+        if (!string.IsNullOrWhiteSpace(client))
+            query = query.Where(p => p.LiquidClient == client);
+
+        if (debtorId.HasValue)
+            query = query.Where(p => p.DebtorId == debtorId.Value);
 
         if (!string.IsNullOrWhiteSpace(status))
             query = query.Where(p => p.Status == status);
@@ -96,7 +116,12 @@ public class InvoiceService : IInvoiceService
             .ToListAsync();
 
         var submittedIds = await GetProcessedInvoiceIdsAsync(entities.Select(p => p.InvoiceId));
-        var items = entities.Select(p => ToDto(p, IsProcessed(p, submittedIds))).ToList();
+        var onAnyNsIds = await GetOnAnyNsInvoiceIdsAsync(entities.Select(p => p.InvoiceId));
+        var items = entities.Select(p =>
+        {
+            onAnyNsIds.TryGetValue(p.InvoiceId, out var nsId);
+            return ToDto(p, IsProcessed(p, submittedIds), nsId != null, nsId);
+        }).ToList();
 
         string? nextCursorTime = null;
         string? nextCursorId = null;
@@ -122,7 +147,12 @@ public class InvoiceService : IInvoiceService
             .ToListAsync();
 
         var submittedIds = await GetProcessedInvoiceIdsAsync(entities.Select(p => p.InvoiceId));
-        return entities.Select(p => ToDto(p, IsProcessed(p, submittedIds)));
+        var onAnyNsIds = await GetOnAnyNsInvoiceIdsAsync(entities.Select(p => p.InvoiceId));
+        return entities.Select(p =>
+        {
+            onAnyNsIds.TryGetValue(p.InvoiceId, out var nsId);
+            return ToDto(p, IsProcessed(p, submittedIds), nsId != null, nsId);
+        });
     }
 
     public async Task<IEnumerable<InvoiceDto>> GetByDebtorAsync(Guid debtorId)

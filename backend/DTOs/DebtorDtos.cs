@@ -16,7 +16,31 @@ public record DebtorDto(
     string? PostalCode = null,
     string? Notes = null,
     string? Language = null,
-    string? PreferredContactMethod = null
+    string? PreferredContactMethod = null,
+    Guid? RedirectId = null,
+    string? RedirectName = null
+);
+
+public record MergeDebtorDto(Guid CanonicalId);
+
+public record DebtorMergeAuditDto(
+    Guid Id,
+    Guid AliasId,
+    string AliasName,
+    Guid RequestedCanonicalId,
+    Guid CanonicalId,
+    string CanonicalName,
+    int InvoicesRepointed,
+    int AliasesRepointed,
+    Guid PerformedBy,
+    DateTimeOffset PerformedAt
+);
+
+public record DebtorClientDto(
+    string Shortcode,
+    string? CadenceName,
+    int InvoiceCount,
+    decimal TotalAmount
 );
 
 public record CreateDebtorDto(

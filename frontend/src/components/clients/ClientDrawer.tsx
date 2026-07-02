@@ -66,6 +66,14 @@ interface Invoice {
   isProcessed: boolean
 }
 
+interface InvoicePage {
+  items: Invoice[]
+  nextCursorTime: string | null
+  nextCursorId: string | null
+}
+
+const PROCESSED_PAGE_SIZE = 25
+
 interface NotificationSheet {
   id: string
   clientShortcode: string
@@ -129,14 +137,14 @@ function AgingBarChart({ aging }: { aging: ClientSummaryAging }) {
 // ── New Debtor dialog ──────────────────────────────────────────────────────
 function NewDebtorDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [loading, setLoading] = useState(false)
-  const [form, setForm] = useState({ name: '', cadenceName: '', group: 'Active', active: true })
+  const [form, setForm] = useState({ name: '', group: 'Active', active: true })
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     try {
       await api.post('/api/debtors', form)
-      setForm({ name: '', cadenceName: '', group: 'Active', active: true })
+      setForm({ name: '', group: 'Active', active: true })
       onClose()
     } catch (err) {
       console.error('Failed to create debtor', err)
@@ -160,18 +168,19 @@ function NewDebtorDialog({ open, onClose }: { open: boolean; onClose: () => void
                 onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Wayne Enterprises LLC" />
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="nd-cadence" className="text-right">Cadence Name</Label>
-              <Input id="nd-cadence" className="col-span-3" value={form.cadenceName}
-                onChange={e => setForm({ ...form, cadenceName: e.target.value })} placeholder="Wayne Ent" />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label className="text-right">Group</Label>
+              <Label
+                htmlFor="nd-group"
+                className="text-right cursor-help"
+                title="Debtors added by an n8n import start as Under Review until vetted."
+              >
+                Under Review / Approved
+              </Label>
               <div className="col-span-3">
                 <Select value={form.group} onValueChange={v => setForm({ ...form, group: v })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger id="nd-group"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Active">Active</SelectItem>
-                    <SelectItem value="Review">Review</SelectItem>
+                    <SelectItem value="Active">Approved</SelectItem>
+                    <SelectItem value="Review">Under Review</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -323,6 +332,13 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
   const [bulkNoteDraft, setBulkNoteDraft] = useState('')
   const [postingBulkNote, setPostingBulkNote] = useState(false)
 
+  // Processed invoices: server cursor-paged ("Load more") since this list can be large
+  // (e.g. a client with hundreds of historical invoices) — see PAGINATION_PLAN.md.
+  const [processedLoaded, setProcessedLoaded] = useState<Invoice[]>([])
+  const [processedCursor, setProcessedCursor] = useState<{ time: string; id: string } | null>(null)
+  const [processedHasMore, setProcessedHasMore] = useState(true)
+  const [processedLoading, setProcessedLoading] = useState(false)
+
   useEffect(() => {
     if (client) {
       setActiveClient(client.shortcode)
@@ -350,7 +366,59 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
       }
     }
     fetchData()
+
+    // Reset + load the first page of the (potentially large) Processed invoices list.
+    setProcessedLoaded([])
+    setProcessedCursor(null)
+    setProcessedHasMore(true)
   }, [client])
+
+  // Fetches one page at a time from the cursor endpoint and keeps only the processed rows
+  // (the endpoint pages the client's whole invoice stream — unprocessed + processed interleaved
+  // by CreatedTime — since "processed" is a computed flag, not a raw Status value it can filter
+  // on server-side). Loops across pages so a "Load more" click reliably surfaces at least one
+  // new processed row instead of silently no-op'ing when a fetched page happens to be all
+  // unprocessed invoices.
+  const loadMoreProcessed = async () => {
+    if (!client || processedLoading || !processedHasMore) return
+    setProcessedLoading(true)
+    try {
+      let cursor = processedCursor
+      let gathered: Invoice[] = []
+      let hasMore = true
+      let guard = 0
+      while (gathered.length === 0 && hasMore && guard < 20) {
+        guard++
+        const query = new URLSearchParams()
+        query.set('pageSize', String(PROCESSED_PAGE_SIZE))
+        if (cursor) {
+          query.set('cursorTime', cursor.time)
+          query.set('cursorId', cursor.id)
+        }
+        const res = await api.get<InvoicePage>(`/api/invoices/client/${client.shortcode}/page?${query.toString()}`)
+        gathered = gathered.concat(res.data.items.filter(i => i.isProcessed))
+        if (res.data.nextCursorTime && res.data.nextCursorId) {
+          cursor = { time: res.data.nextCursorTime, id: res.data.nextCursorId }
+        } else {
+          hasMore = false
+        }
+      }
+      setProcessedLoaded(prev => [...prev, ...gathered])
+      setProcessedCursor(cursor)
+      setProcessedHasMore(hasMore)
+    } catch (error) {
+      console.error('Failed to load processed invoices page:', error)
+    } finally {
+      setProcessedLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (client && processedExpanded && processedLoaded.length === 0 && processedHasMore) {
+      loadMoreProcessed()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client, processedExpanded])
 
   const handleDetailsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type } = e.target
@@ -480,14 +548,15 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
     return sorted
   }, [summary?.debtors, debtorSortCol, debtorSortDir])
 
+  const matchesSearch = (inv: Invoice, q: string) =>
+    !q ||
+    inv.originalInvoice.toLowerCase().includes(q) ||
+    (inv.debtorName || '').toLowerCase().includes(q) ||
+    inv.status.toLowerCase().includes(q)
+
   const filteredInvoices = useMemo(() => {
     const q = invoiceSearch.toLowerCase()
-    return invoices.filter(inv =>
-      !q ||
-      inv.originalInvoice.toLowerCase().includes(q) ||
-      (inv.debtorName || '').toLowerCase().includes(q) ||
-      inv.status.toLowerCase().includes(q)
-    )
+    return invoices.filter(inv => matchesSearch(inv, q))
   }, [invoices, invoiceSearch])
 
   const unprocessedInvoices = useMemo(
@@ -495,10 +564,13 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
     [filteredInvoices]
   )
 
-  const processedInvoices = useMemo(
-    () => filteredInvoices.filter(inv => inv.isProcessed),
-    [filteredInvoices]
-  )
+  // Processed invoices are cursor-paged/appended via `processedLoaded` (see loadMoreProcessed)
+  // rather than derived from the full `invoices` fetch — that list can be hundreds of rows for
+  // a large client. Search/sort apply to whatever's currently loaded.
+  const processedInvoices = useMemo(() => {
+    const q = invoiceSearch.toLowerCase()
+    return processedLoaded.filter(inv => matchesSearch(inv, q))
+  }, [processedLoaded, invoiceSearch])
 
   const sortInvoices = (list: Invoice[], col: string | null, dir: SortDirection) => {
     const sorted = [...list]
@@ -963,7 +1035,7 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
                                 <span className="text-sm font-semibold text-[#191C1E]">Processed</span>
                               </div>
                               <Badge variant="outline" className="bg-[#DCFCE7] text-[#15803D] border-transparent font-semibold">
-                                {processedInvoices.length}
+                                {processedLoaded.length} loaded{processedHasMore ? '+' : ''}
                               </Badge>
                             </button>
                             {processedExpanded && (
@@ -1064,6 +1136,22 @@ export function ClientDrawer({ client, onClose }: ClientDrawerProps) {
                                       ))}
                                     </TableBody>
                                   </Table>
+                                </div>
+                                <div className="flex items-center justify-between px-4 py-2.5 border-t border-slate-200 bg-slate-50">
+                                  <span className="text-xs text-muted-foreground">
+                                    {processedLoaded.length} loaded{processedHasMore ? ' (more available)' : ''}
+                                  </span>
+                                  {processedHasMore && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-7 text-xs"
+                                      disabled={processedLoading}
+                                      onClick={loadMoreProcessed}
+                                    >
+                                      {processedLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Load more'}
+                                    </Button>
+                                  )}
                                 </div>
                               </div>
                             )}

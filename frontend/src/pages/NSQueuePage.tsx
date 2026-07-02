@@ -24,7 +24,20 @@ interface Invoice {
   amount: number
   status: string
   debtorName?: string
+  source?: string
+  isProcessed?: boolean
+  onAnyNs?: boolean
+  onNsId?: string | null
 }
+
+interface InvoicePage {
+  items: Invoice[]
+  nextCursorTime: string | null
+  nextCursorId: string | null
+}
+
+const ELIGIBLE_STATUSES = ['Pre-Verified', 'Unverified', 'OA']
+const PURCHASED_PAGE_SIZE = 25
 
 export function NSQueuePage() {
   const [searchParams] = useSearchParams()
@@ -35,7 +48,7 @@ export function NSQueuePage() {
   const [loading, setLoading] = useState(false)
   const [filter, setFilter] = useState<'Draft' | 'Submitted' | 'All'>('All')
   const [expandedId, setExpandedId] = useState<string | null>(null)
-  
+
   const [detailSheetId, setDetailSheetId] = useState<string | null>(null)
   const [detailSheet, setDetailSheet] = useState<NotificationSheetDto | null>(null)
 
@@ -44,7 +57,7 @@ export function NSQueuePage() {
   const [builderInvoices, setBuilderInvoices] = useState<Invoice[]>([])
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<string[]>([])
   const [isSaving, setIsSaving] = useState(false)
-  
+
   const [isShared, setIsShared] = useState(true)
   const [initialFeePercent, setInitialFeePercent] = useState<number>(0)
   const [reserveFeePercent, setReserveFeePercent] = useState<number>(0)
@@ -56,6 +69,15 @@ export function NSQueuePage() {
   const [uploadModalOpen, setUploadModalOpen] = useState(false)
   const [uploadModalClient, setUploadModalClient] = useState<string>('')
   const [debtors, setDebtors] = useState<{ id: string; name: string }[]>([])
+  const [purchasedExpanded, setPurchasedExpanded] = useState(false)
+
+  // "Already purchased" is the large, read-only tier of the eligible-invoice list (see
+  // PAGINATION_PLAN.md) — loaded via server cursor "Load more" rather than upfront, keeping the
+  // Actionable/On-another-NS working set (fetched via builderInvoices below) small and fast.
+  const [purchasedLoaded, setPurchasedLoaded] = useState<Invoice[]>([])
+  const [purchasedCursor, setPurchasedCursor] = useState<{ time: string; id: string } | null>(null)
+  const [purchasedHasMore, setPurchasedHasMore] = useState(true)
+  const [purchasedLoading, setPurchasedLoading] = useState(false)
 
   // Preview modal
   const [previewSheet, setPreviewSheet] = useState<NotificationSheetDto | null>(null)
@@ -150,13 +172,15 @@ export function NSQueuePage() {
         setInitialFeePercent((client.discountRate || 0) * 100)
         setReserveFeePercent((client.reserveRate || 0) * 100)
       }
-      
+
       const fetchClientInvoices = async () => {
         try {
           const res = await api.get<Invoice[]>(`/api/invoices/client/${builderClient}`)
-          // Filter to eligible statuses
-          const eligible = res.data.filter(i => 
-            ['Pre-Verified', 'Unverified', 'OA'].includes(i.status)
+          // Keep only the Actionable + "On another NS" tiers here — the working set a user picks
+          // from, which stays small. The "Already purchased" tier (can be large — e.g. a client
+          // with hundreds of historical invoices) is loaded separately via cursor "Load more".
+          const eligible = res.data.filter(i =>
+            ELIGIBLE_STATUSES.includes(i.status) && !i.isProcessed
           )
           setBuilderInvoices(eligible)
           setSelectedInvoiceIds([]) // reset selections
@@ -165,10 +189,64 @@ export function NSQueuePage() {
         }
       }
       fetchClientInvoices()
+
+      // Reset + load the first page of "Already purchased".
+      setPurchasedLoaded([])
+      setPurchasedCursor(null)
+      setPurchasedHasMore(true)
     } else {
       setBuilderInvoices([])
+      setPurchasedLoaded([])
+      setPurchasedCursor(null)
+      setPurchasedHasMore(true)
     }
   }, [builderClient, clients])
+
+  const loadMorePurchased = async () => {
+    if (!builderClient || purchasedLoading || !purchasedHasMore) return
+    setPurchasedLoading(true)
+    try {
+      let cursor = purchasedCursor
+      let gathered: Invoice[] = []
+      let hasMore = true
+      let guard = 0
+      // Loop pages until we gather at least one "purchased" row or run out — a single page can
+      // legitimately contain zero purchased rows since "purchased" is a computed flag (Source ==
+      // "Import" or on a Submitted NS), not a raw status the cursor query filters on server-side.
+      while (gathered.length === 0 && hasMore && guard < 20) {
+        guard++
+        const query = new URLSearchParams()
+        query.set('pageSize', String(PURCHASED_PAGE_SIZE))
+        if (cursor) {
+          query.set('cursorTime', cursor.time)
+          query.set('cursorId', cursor.id)
+        }
+        const res = await api.get<InvoicePage>(`/api/invoices/client/${builderClient}/page?${query.toString()}`)
+        gathered = gathered.concat(
+          res.data.items.filter(i => ELIGIBLE_STATUSES.includes(i.status) && i.isProcessed)
+        )
+        if (res.data.nextCursorTime && res.data.nextCursorId) {
+          cursor = { time: res.data.nextCursorTime, id: res.data.nextCursorId }
+        } else {
+          hasMore = false
+        }
+      }
+      setPurchasedLoaded(prev => [...prev, ...gathered])
+      setPurchasedCursor(cursor)
+      setPurchasedHasMore(hasMore)
+    } catch (err) {
+      console.error('Failed to load purchased invoices page:', err)
+    } finally {
+      setPurchasedLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (builderClient && purchasedExpanded && purchasedLoaded.length === 0 && purchasedHasMore) {
+      loadMorePurchased()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [builderClient, purchasedExpanded])
 
   const deleteQueue = async (id: string) => {
     if (!confirm('Are you sure you want to delete this Draft?')) return
@@ -301,7 +379,7 @@ export function NSQueuePage() {
         return { invoiceId: invId, includedAmount: inv?.amount || 0 }
       })
 
-      await Promise.all(itemsToAdd.map(item => 
+      await Promise.all(itemsToAdd.map(item =>
         api.post(`/api/notificationsheets/${nsId}/items`, item)
       ))
 
@@ -316,6 +394,8 @@ export function NSQueuePage() {
   }
 
   const toggleInvoice = (id: string) => {
+    const inv = builderInvoices.find(i => i.invoiceId === id)
+    if (inv && (inv.isProcessed || inv.onAnyNs)) return // locked: already purchased or on another NS
     setSelectedInvoiceIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id])
   }
 
@@ -381,9 +461,19 @@ export function NSQueuePage() {
     }
   }
 
+  // Three-way split for the builder's "Eligible Invoices" list:
+  // - Actionable: not purchased, not on any NS — normal, selectable. Fully loaded (small working set).
+  // - On another NS: sitting on a Draft (or otherwise) NS but not yet "purchased" — locked, disabled.
+  //   Also fully loaded via builderInvoices (excluded from Actionable only by the onAnyNs flag).
+  // - Already purchased: Source=="Import" or on a Submitted NS — greyed, collapsed by default,
+  //   loaded separately via server cursor "Load more" (purchasedLoaded) since it can be large.
+  const actionableInvoices = builderInvoices.filter(i => !i.isProcessed && !i.onAnyNs)
+  const onOtherNsInvoices = builderInvoices.filter(i => i.onAnyNs && !i.isProcessed)
+  const purchasedInvoices = purchasedLoaded
+
   const selectedInvoicesData = builderInvoices.filter(i => selectedInvoiceIds.includes(i.invoiceId))
   const totalInvoiceAmount = selectedInvoicesData.reduce((acc, i) => acc + i.amount, 0)
-  
+
   const initialFeeAmt = totalInvoiceAmount * (initialFeePercent / 100)
   const reserveFeeAmt = totalInvoiceAmount * (reserveFeePercent / 100)
   const totalFee = initialFeeAmt + reserveFeeAmt + otherFee
@@ -620,13 +710,14 @@ export function NSQueuePage() {
                   <span className="text-sm text-muted-foreground">{selectedInvoiceIds.length} selected (${totalInvoiceAmount.toLocaleString()})</span>
                 </div>
                 <div className="overflow-auto flex-1">
+                  {/* Actionable — not purchased, not on any NS */}
                   <Table>
                     <TableHeader className="bg-slate-50 sticky top-0 shadow-sm z-10 border-b">
                       <TableRow>
                         <TableHead className="w-12 text-center">
-                          <Checkbox 
-                            checked={builderInvoices.length > 0 && selectedInvoiceIds.length === builderInvoices.length}
-                            onCheckedChange={(c) => setSelectedInvoiceIds(c ? builderInvoices.map(i => i.invoiceId) : [])}
+                          <Checkbox
+                            checked={actionableInvoices.length > 0 && actionableInvoices.every(i => selectedInvoiceIds.includes(i.invoiceId))}
+                            onCheckedChange={(c) => setSelectedInvoiceIds(c ? actionableInvoices.map(i => i.invoiceId) : [])}
                           />
                         </TableHead>
                         <TableHead className="text-xs font-semibold text-muted-foreground">INVOICE</TableHead>
@@ -638,7 +729,7 @@ export function NSQueuePage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {builderInvoices.map(inv => (
+                      {actionableInvoices.map(inv => (
                         <TableRow key={inv.invoiceId}>
                           <TableCell className="text-center">
                             <Checkbox checked={selectedInvoiceIds.includes(inv.invoiceId)} onCheckedChange={() => toggleInvoice(inv.invoiceId)} />
@@ -669,11 +760,110 @@ export function NSQueuePage() {
                           </TableCell>
                         </TableRow>
                       ))}
-                      {builderInvoices.length === 0 && (
-                        <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No eligible invoices found for this client.</TableCell></TableRow>
+                      {actionableInvoices.length === 0 && (
+                        <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No actionable invoices found for this client.</TableCell></TableRow>
                       )}
                     </TableBody>
                   </Table>
+
+                  {/* On another NS — locked, cannot be added to a second sheet */}
+                  {onOtherNsInvoices.length > 0 && (
+                    <div className="border-t">
+                      <div className="px-4 py-2 bg-slate-50 border-b">
+                        <span className="text-xs font-semibold text-muted-foreground">On another NS ({onOtherNsInvoices.length})</span>
+                      </div>
+                      <Table>
+                        <TableBody>
+                          {onOtherNsInvoices.map(inv => (
+                            <TableRow key={inv.invoiceId} className="opacity-60">
+                              <TableCell className="text-center w-12">
+                                <Checkbox checked={false} disabled />
+                              </TableCell>
+                              <TableCell className="font-medium text-blue-600">{inv.originalInvoice}</TableCell>
+                              <TableCell>{inv.debtorName || '-'}</TableCell>
+                              <TableCell className="text-muted-foreground text-xs">{inv.date}</TableCell>
+                              <TableCell className="text-right font-semibold">${inv.amount.toLocaleString(undefined, {minimumFractionDigits:2})}</TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className="text-[10px] h-5 px-1.5 border-transparent bg-slate-200 text-slate-700">
+                                  on NS #{inv.onNsId?.slice(0, 8)}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="w-10" />
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+
+                  {/* Already purchased — collapsed by default, greyed, not selectable. Loaded via
+                      server cursor "Load more" (can be a large, read-only list). */}
+                  <div className="border-t">
+                    <button
+                      type="button"
+                      onClick={() => setPurchasedExpanded(prev => !prev)}
+                      className="w-full flex items-center justify-between px-4 py-2 bg-slate-50 border-b hover:bg-slate-100"
+                    >
+                      <div className="flex items-center gap-2">
+                        {purchasedExpanded ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+                        <span className="text-xs font-semibold text-muted-foreground">
+                          Already purchased ({purchasedInvoices.length}{purchasedHasMore ? '+' : ''} loaded)
+                        </span>
+                      </div>
+                      <span className="text-[11px] text-muted-foreground">Click to {purchasedExpanded ? 'hide' : 'show'}</span>
+                    </button>
+                    {purchasedExpanded && (
+                      <>
+                        <Table>
+                          <TableBody>
+                            {purchasedLoading && purchasedInvoices.length === 0 && (
+                              <TableRow>
+                                <TableCell colSpan={6} className="text-center py-6 text-xs text-muted-foreground">Loading...</TableCell>
+                              </TableRow>
+                            )}
+                            {!purchasedLoading && purchasedInvoices.length === 0 && (
+                              <TableRow>
+                                <TableCell colSpan={6} className="text-center py-6 text-xs text-muted-foreground">No purchased invoices found for this client.</TableCell>
+                              </TableRow>
+                            )}
+                            {purchasedInvoices.map(inv => (
+                              <TableRow key={inv.invoiceId} className="opacity-50">
+                                <TableCell className="text-center w-12">
+                                  <Checkbox checked={false} disabled />
+                                </TableCell>
+                                <TableCell className="font-medium text-blue-600">{inv.originalInvoice}</TableCell>
+                                <TableCell>{inv.debtorName || '-'}</TableCell>
+                                <TableCell className="text-muted-foreground text-xs">{inv.date}</TableCell>
+                                <TableCell className="text-right font-semibold">${inv.amount.toLocaleString(undefined, {minimumFractionDigits:2})}</TableCell>
+                                <TableCell>
+                                  <Badge variant="outline" className="text-[10px] h-5 px-1.5 border-transparent bg-[#DCFCE7] text-[#15803D]">
+                                    Purchased
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="w-10" />
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                        {purchasedHasMore && (
+                          <div className="flex items-center justify-between px-4 py-2 border-t bg-slate-50">
+                            <span className="text-[11px] text-muted-foreground">
+                              {purchasedInvoices.length} loaded (more available)
+                            </span>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs"
+                              disabled={purchasedLoading}
+                              onClick={loadMorePurchased}
+                            >
+                              {purchasedLoading ? 'Loading...' : 'Load more'}
+                            </Button>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
@@ -689,7 +879,7 @@ export function NSQueuePage() {
                 <span className="font-semibold">Total Amount</span>
                 <span className="font-bold text-lg">${totalInvoiceAmount.toLocaleString(undefined, {minimumFractionDigits:2})}</span>
               </div>
-              
+
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <Label htmlFor="initial-fee" className="text-xs w-32">Initial Fee %</Label>
@@ -743,7 +933,7 @@ export function NSQueuePage() {
 
               <div className="space-y-2 pt-4">
                 <Label className="text-xs">Notes</Label>
-                <textarea 
+                <textarea
                   className="flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
                   placeholder="Internal notes..."
                   value={notes}

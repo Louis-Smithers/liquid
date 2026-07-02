@@ -10,6 +10,7 @@ interface SortableTableHeadProps {
   currentSortDirection: SortDirection;
   onSort: (columnKey: string, direction: SortDirection) => void;
   className?: string;
+  title?: string;
 }
 
 export function SortableTableHead({
@@ -19,6 +20,7 @@ export function SortableTableHead({
   currentSortDirection,
   onSort,
   className = "",
+  title,
 }: SortableTableHeadProps) {
   const isActive = currentSortColumn === columnKey;
 
@@ -42,6 +44,7 @@ export function SortableTableHead({
     <TableHead
       className={`cursor-pointer select-none hover:bg-muted/50 transition-colors ${className}`}
       onClick={handleClick}
+      title={title}
     >
       <div className={`flex items-center gap-1 ${justify}`}>
         {label}

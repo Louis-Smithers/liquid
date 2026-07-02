@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   Table,
   TableBody,
@@ -8,11 +9,13 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Input } from "@/components/ui/input"
-import { Search, SlidersHorizontal, Settings2, ChevronLeft, ChevronRight } from "lucide-react"
+import { Search, SlidersHorizontal, Settings2 } from "lucide-react"
 import { api } from "@/lib/api"
 import { ClientDrawer } from "@/components/clients/ClientDrawer"
 import { AddClientModal } from "@/components/clients/AddClientModal"
 import { SortableTableHead } from "@/components/ui/SortableTableHead"
+import { PaginationBar } from "@/components/ui/PaginationBar"
+import { usePagination } from "@/hooks/usePagination"
 
 export interface Client {
   id: string
@@ -45,6 +48,7 @@ interface ClientStat {
 }
 
 export function ClientsPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const [clients, setClients] = useState<Client[]>([])
   const [clientStats, setClientStats] = useState<Record<string, ClientStat>>({})
   const [loading, setLoading] = useState(true)
@@ -54,7 +58,6 @@ export function ClientsPage() {
 
   const [sortColumn, setSortColumn] = useState<string | null>(null)
   const [sortDirection, setSortDirection] = useState<SortDirection>(null)
-  const [page, setPage] = useState(0)
 
   const PAGE_SIZE = 12
 
@@ -78,6 +81,13 @@ export function ClientsPage() {
     fetchClients()
   }, [])
 
+  useEffect(() => {
+    const shortcode = searchParams.get('clientShortcode')
+    if (!shortcode || clients.length === 0) return
+    const match = clients.find(c => c.shortcode === shortcode)
+    if (match) setSelectedClient(match)
+  }, [clients, searchParams])
+
   const handleSort = (columnKey: string, direction: SortDirection) => {
     setSortColumn(columnKey)
     setSortDirection(direction)
@@ -91,9 +101,6 @@ export function ClientsPage() {
     const matchesTab = activeTab === 'all' || (activeTab === 'active' ? client.active : !client.active)
     return matchesSearch && matchesTab
   })
-
-  // Reset to first page whenever filter/sort/tab changes
-  useEffect(() => { setPage(0) }, [searchQuery, activeTab, sortColumn, sortDirection])
 
   const statColumns = new Set(['verifiedPercent', 'debtorCount', 'invoiceCount', 'totalAmount'])
 
@@ -119,9 +126,10 @@ export function ClientsPage() {
     return 0;
   });
 
-  const totalPages = Math.ceil(sortedClients.length / PAGE_SIZE)
-  const pagedClients = sortedClients.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+  const { page, totalPages, pageItems: pagedClients, goPrev, goNext, setPage } = usePagination(sortedClients, PAGE_SIZE)
 
+  // Reset to first page whenever filter/sort/tab changes
+  useEffect(() => { setPage(0) }, [searchQuery, activeTab, sortColumn, sortDirection]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const activeCount = clients.filter(c => c.active).length
   const inactiveCount = clients.filter(c => !c.active).length
@@ -380,12 +388,14 @@ export function ClientsPage() {
         </div>
 
         {/* ── Table Footer / Pagination ── */}
-        <div className="border-t-2 border-[#C7C4D7] bg-[#F7F9FB]">
-          <div className="flex flex-row items-center justify-between px-4 py-3.5">
-            <div className="flex flex-row items-center gap-3">
-              <span className="text-xs font-semibold tracking-[0.6px] text-[#191C1E]">
-                {totalCount} TOTAL
-              </span>
+        <PaginationBar
+          page={page}
+          totalPages={totalPages}
+          totalCount={totalCount}
+          onPrev={goPrev}
+          onNext={goNext}
+          leftExtra={
+            <>
               <div className="w-px h-3.5 bg-[#C7C4D7]" />
               <span className="text-xs font-semibold tracking-[0.6px] text-[#16A34A]">
                 {activeCount} ACTIVE
@@ -394,33 +404,17 @@ export function ClientsPage() {
               <span className="text-xs font-semibold tracking-[0.6px] text-[#6B7280]">
                 {inactiveCount} INACTIVE
               </span>
-            </div>
-            <div className="flex flex-row items-center gap-3">
-              <span className="text-xs text-[#464554]">
-                Page {totalPages === 0 ? 0 : page + 1} of {totalPages}
-              </span>
-              <button
-                onClick={() => setPage(p => p - 1)}
-                disabled={page === 0}
-                className="flex items-center justify-center w-7 h-7 rounded border border-[#C7C4D7] bg-white disabled:opacity-40 hover:bg-[#E6E8EA] transition-colors"
-              >
-                <ChevronLeft className="h-4 w-4 text-[#464554]" />
-              </button>
-              <button
-                onClick={() => setPage(p => p + 1)}
-                disabled={page >= totalPages - 1}
-                className="flex items-center justify-center w-7 h-7 rounded border border-[#C7C4D7] bg-white disabled:opacity-40 hover:bg-[#E6E8EA] transition-colors"
-              >
-                <ChevronRight className="h-4 w-4 text-[#464554]" />
-              </button>
-            </div>
-          </div>
-        </div>
+            </>
+          }
+        />
       </div>
 
       <ClientDrawer
         client={selectedClient}
-        onClose={() => setSelectedClient(null)}
+        onClose={() => {
+          setSelectedClient(null)
+          if (searchParams.has('clientShortcode')) setSearchParams({})
+        }}
       />
     </div>
   )

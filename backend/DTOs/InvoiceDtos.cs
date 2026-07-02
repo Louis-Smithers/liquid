@@ -23,7 +23,9 @@ public record InvoiceDto(
     DateTimeOffset? ProcessedTime = null,
     bool Verified = false,
     string Source = "Import",
-    bool IsProcessed = false
+    bool IsProcessed = false,
+    bool OnAnyNs = false,
+    string? OnNsId = null
 );
 
 public record InvoiceNoteDto(
