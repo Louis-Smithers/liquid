@@ -52,11 +52,12 @@ public class InvoicesController : ControllerBase
         [FromQuery] string? cursorTime = null,
         [FromQuery] string? cursorId = null,
         [FromQuery] int pageSize = 25,
-        [FromQuery] string? status = null)
+        [FromQuery] string? status = null,
+        [FromQuery] Guid? debtorId = null)
     {
         pageSize = Math.Clamp(pageSize, 1, 100);
         DateTimeOffset? parsedCursor = DateTimeOffset.TryParse(cursorTime, out var ct) ? ct : null;
-        return Ok(await _service.GetPageAsync(null, status, parsedCursor, cursorId, pageSize, client: shortcode));
+        return Ok(await _service.GetPageAsync(null, status, parsedCursor, cursorId, pageSize, client: shortcode, debtorId: debtorId));
     }
 
     [HttpGet("debtor/{debtorId:guid}/page")]

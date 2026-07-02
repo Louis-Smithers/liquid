@@ -75,7 +75,7 @@ public class DebtorService : IDebtorService
         if (_currentUser.IsClient)
             query = query.Where(p => p.LiquidClient == _currentUser.ClientShortcode);
 
-        return await query
+        var groupedStats = await query
             .GroupBy(p => p.LiquidClient)
             .Select(g => new
             {
@@ -83,12 +83,19 @@ public class DebtorService : IDebtorService
                 InvoiceCount = g.Count(),
                 TotalAmount = g.Sum(p => p.Amount)
             })
-            .Join(_context.Clients,
+            .ToListAsync();
+
+        var clientCodes = groupedStats.Select(s => s.Shortcode).ToList();
+        var clients = await _context.Clients
+            .Where(c => clientCodes.Contains(c.Shortcode))
+            .ToListAsync();
+
+        return groupedStats
+            .Join(clients,
                 g => g.Shortcode,
                 c => c.Shortcode,
                 (g, c) => new DebtorClientDto(c.Shortcode, c.CadenceName, g.InvoiceCount, g.TotalAmount))
-            .OrderByDescending(d => d.TotalAmount)
-            .ToListAsync();
+            .OrderByDescending(d => d.TotalAmount);
     }
 
     // Resolves a candidate canonical debtor to its ultimate target, following redirect chains

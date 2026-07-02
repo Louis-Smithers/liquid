@@ -26,12 +26,10 @@ public class SearchService : ISearchService
         var term = q.Trim();
         var pattern = $"%{term}%";
 
-        var debtorsTask = SearchDebtorsAsync(pattern);
-        var clientsTask = SearchClientsAsync(pattern);
+        var debtors = await SearchDebtorsAsync(pattern);
+        var clients = await SearchClientsAsync(pattern);
 
-        await Task.WhenAll(debtorsTask, clientsTask);
-
-        return new OmnibarSearchDto(debtorsTask.Result, clientsTask.Result);
+        return new OmnibarSearchDto(debtors, clients);
     }
 
     private async Task<IEnumerable<SearchHitDto>> SearchDebtorsAsync(string pattern)

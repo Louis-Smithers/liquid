@@ -65,12 +65,12 @@ function DebtorCombobox({
       <button
         type="button"
         onClick={() => { setOpen(o => !o); setQuery('') }}
-        className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring overflow-hidden"
       >
-        <span className={selected ? "text-foreground truncate" : "text-muted-foreground"}>
+        <span className={selected ? "text-foreground truncate flex-1 text-left min-w-0 mr-2" : "text-muted-foreground truncate flex-1 text-left min-w-0 mr-2"}>
           {selected ? `${selected.name}${selected.redirectId ? ' (already merged)' : ''}` : placeholder}
         </span>
-        <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 opacity-50 ml-2" />
+        <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 opacity-50" />
       </button>
 
       {open && (
@@ -94,11 +94,11 @@ function DebtorCombobox({
                   key={d.id}
                   type="button"
                   onClick={() => { onChange(d.id); setOpen(false); setQuery('') }}
-                  className={`flex w-full items-center px-3 py-1.5 text-sm text-left hover:bg-accent hover:text-accent-foreground ${
+                  className={`flex w-full items-center px-3 py-1.5 text-sm text-left hover:bg-accent hover:text-accent-foreground overflow-hidden ${
                     d.id === value ? 'bg-accent/50 font-medium' : ''
                   }`}
                 >
-                  <span className="truncate">{d.name}</span>
+                  <span className="truncate flex-1 min-w-0">{d.name}</span>
                   {d.redirectId && <span className="ml-1.5 text-xs text-muted-foreground shrink-0">(already merged)</span>}
                 </button>
               ))
